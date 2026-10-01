@@ -9,3 +9,4 @@
 - Preserve `.idea` and `ressources/` as the original user brief and reference material.
 - Add integration modules when they are implemented; keep future plans in documentation instead of empty source files.
 - After changes to connection behavior, run the relevant pytest tests and Ruff checks. Rebuild Docker when packaging or deployed files change.
+- Use Conventional Commits (`feat`, `fix`, `refactor`, `docs`, `test`, `chore`) with a short scope when useful. Commit completed, validated changes separately.

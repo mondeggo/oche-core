@@ -105,9 +105,17 @@ docker compose logs -f
 ```
 
 The same interface is available at <http://127.0.0.1:9180>. The container runs as a non-root
-user, keeps data in the `ochecore-data` volume and mounts `config/` read-only.
+user, stores persistent data in the project's `./data` folder and mounts `config/` read-only.
 AutoDarts Detection runs separately on the board computer; OcheCore does not access cameras.
-Existing data files and the Docker volume remain compatible with the `src/ochecore/` layout.
+The `./data:/data` bind mount contains saved connection settings and OAuth tokens. It is
+excluded from Git and Docker build context. Back up this folder to preserve the login.
+On Linux, create it before startup and give container UID/GID 10001 write access:
+`mkdir -p data && sudo chown 10001:10001 data && chmod 700 data`.
+
+To migrate an existing named volume, stop the old service, copy its `/data` contents into
+the initially absent `./data` folder with `docker cp CONTAINER:/data ./data`, then recreate
+the service with this Compose configuration. Keep the original volume until the migrated
+service has successfully restored its session.
 
 Set `ui_enabled: false` in `config/config.yaml`, or `OCHECORE_UI_ENABLED=false` in `.env`,
 to disable web pages in Docker. Restart after changing YAML; recreate with

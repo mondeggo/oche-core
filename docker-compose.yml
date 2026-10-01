@@ -14,12 +14,9 @@ services:
       OCHECORE_BOARD_ID: ${OCHECORE_BOARD_ID:-}
       OCHECORE_UI_ENABLED: ${OCHECORE_UI_ENABLED:-}
     volumes:
-      - ochecore-data:/data
+      - ./data:/data
       - ./config:/app/config:ro
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-
-volumes:
-  ochecore-data:
