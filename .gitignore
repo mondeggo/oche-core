@@ -9,3 +9,4 @@ data/
 dist/
 *.egg-info/
 ressources/
+AGENTS.md
