@@ -58,13 +58,18 @@ while the refresh token is valid. Repeat control operations with the UI disabled
 
 ## Phase 2 — Match interpretation and normalized events
 
-1. Capture anonymized real frames for X01, training, remote opponents and guests sharing a board.
-   Include takeout, corrections, undo and leg transitions.
-   Check AutoGlow-2's additional board `state` and match `events` subscriptions.
-2. Define `throw`, `turn_end`, `bust`, `checkout`, `leg_win`, `match_win`, `player_changed`.
-3. Track match/leg/visit/player and identify local players by Board ID, not account identity.
-4. Distinguish new throws from snapshots, duplicates, corrections and reconnection replay.
-5. Treat cloud scoring as authoritative. Keep interpretation in the core, independent of clients.
+Implemented against supplied reference contracts:
+
+- [x] Separate normalized and raw HTTP/WebSocket streams, with CLI access to both.
+- [x] Board `state` and match `events` subscriptions in addition to the existing topics.
+- [x] Typed match frames and normalized throw, correction, removal, turn, bust and win events.
+- [x] Local, guest, remote and bot attribution using the player's Board ID.
+- [x] Silent snapshots, repeated-state suppression and bounded deduplication after reconnects.
+- [x] Reference-based X01 replay tests for takeout, undo, corrections and leg transitions.
+- [ ] Live gameplay acceptance for X01, training variants, remote opponents and shared boards.
+
+Cloud scoring remains authoritative. Normalization stays in the headless core. See
+[event contracts and source comparison](EVENTS.md) for coverage and limits.
 
 Acceptance: one normalized event per throw in covered scenarios, no extra throw on correction,
 and correct local/remote player attribution.

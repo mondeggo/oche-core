@@ -50,14 +50,14 @@ class Runtime:
                 await self.auth.forget()
             self.config = config
             self._create_connections()
-            self.bus.history.clear()
+            self.bus.clear()
             self.start()
 
     async def logout(self) -> None:
         async with self.lock:
             await self.close()
             await self.auth.forget()
-            self.bus.history.clear()
+            self.bus.clear()
             self._create_connections()
             self.start()
 
@@ -66,8 +66,12 @@ class Runtime:
             "auth": self.auth.status(),
             "cloud": self.cloud.status(),
             "events": {
-                "received": self.bus.sequence,
-                "subscribers": len(self.bus.queues),
+                "received": self.bus.raw_received,
+                "subscribers": len(self.bus.normalized_queues),
+                "raw_subscribers": len(self.bus.raw_queues),
                 "dropped_deliveries": self.bus.dropped,
+                "raw_dropped_deliveries": self.bus.raw_dropped,
+                "normalized": self.cloud.normalizer.emitted,
+                "invalid_match_states": self.cloud.normalizer.invalid_states,
             },
         }

@@ -59,27 +59,78 @@ def test_env_fields_cannot_be_overwritten(settings):
 
 
 @pytest.mark.parametrize("ui_enabled", [True, False])
-def test_websocket_live_delivery_and_idle_cleanup(settings, ui_enabled):
+@pytest.mark.parametrize("raw", [True, False])
+def test_websocket_live_delivery_and_idle_cleanup(settings, ui_enabled, raw):
     settings.ui_enabled = ui_enabled
     app = create_app(settings)
     with TestClient(app) as client:
-        with client.websocket_connect("/events") as ws:
+        with client.websocket_connect("/events/raw" if raw else "/events") as ws:
 
             async def publish():
+                app.state.runtime.bus.record_raw('{"event":"Takeout finished"}')
                 app.state.runtime.bus.publish(
-                    "cloud", "board.events", {"event": "Takeout finished"}
+                    "core", "takeout_finished", {"event": "Takeout finished"}, kind="normalized"
                 )
 
             client.portal.call(publish)
-            assert ws.receive_json()["data"]["event"] == "Takeout finished"
+            message = ws.receive_json()
+            assert (message if raw else message["data"])["event"] == "Takeout finished"
 
         async def assert_clean():
             async with asyncio.timeout(1):
                 # Observe teardown in another task; production code has no completion signal.
-                while app.state.runtime.bus.queues:  # noqa: ASYNC110
+                bus = app.state.runtime.bus
+                while bus.normalized_queues or bus.raw_queues:  # noqa: ASYNC110
                     await asyncio.sleep(0.01)
 
         client.portal.call(assert_clean)
+
+
+def test_raw_api_preserves_cloud_frame_and_normalized_api_is_separate(settings):
+    settings.ui_enabled = False
+    app = create_app(settings)
+    payload = {
+        "channel": "autodarts.boards",
+        "topic": f"{BOARD_ID}.events",
+        "data": {"event": "Takeout started", "new_field": [1, 2]},
+        "server_metadata": {"version": 2},
+    }
+    with TestClient(app) as client:
+        cloud = app.state.runtime.cloud
+        cloud.board_id = BOARD_ID
+        cloud.publish("match.state", {"id": "snapshot"}, snapshot=True)
+        assert client.get("/api/events/raw").json() == []
+        client.portal.call(cloud.on_message, None, json.dumps(payload))
+        assert client.get("/api/events/raw").json() == [payload]
+        normalized = client.get("/api/events").json()
+        assert [event["event"] for event in normalized] == ["takeout_started"]
+        assert all(event["kind"] == "normalized" for event in normalized)
+        assert client.get("/api/events/raw").headers["cache-control"] == "no-store"
+        assert client.post("/api/auth/logout", json={}).status_code == 200
+        assert client.get("/api/events/raw").json() == []
+        assert client.get("/api/events").json() == []
+
+
+def test_readiness_reports_rejected_required_subscription(settings):
+    app = create_app(settings)
+    with TestClient(app) as client:
+        cloud = app.state.runtime.cloud
+        cloud.state = "connected"
+        cloud.subscriptions.add(("autodarts.boards", f"{BOARD_ID}.events"))
+        client.portal.call(
+            cloud.on_message,
+            None,
+            json.dumps(
+                {
+                    "type": "error",
+                    "channel": "autodarts.boards",
+                    "topic": f"{BOARD_ID}.events",
+                    "error": "unauthorized client",
+                }
+            ),
+        )
+        assert client.get("/readyz").status_code == 503
+        assert client.get("/api/status").json()["cloud"]["state"] == "degraded"
 
 
 def test_logout_forgets_persisted_token(settings):

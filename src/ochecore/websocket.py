@@ -10,6 +10,15 @@ router = APIRouter()
 
 @router.websocket("/events")
 async def websocket_events(ws: WebSocket):
+    await stream_events(ws, raw=False)
+
+
+@router.websocket("/events/raw")
+async def raw_websocket_events(ws: WebSocket):
+    await stream_events(ws, raw=True)
+
+
+async def stream_events(ws: WebSocket, raw: bool):
     scheme = "https" if ws.url.scheme == "wss" else "http"
     if not same_origin(ws.headers.get("origin"), ws.headers.get("host", ""), scheme):
         await ws.close(code=1008)
@@ -26,9 +35,10 @@ async def websocket_events(ws: WebSocket):
     async def send_events(queue):
         while True:
             event = await queue.get()
-            await asyncio.wait_for(ws.send_json(event.model_dump(mode="json")), timeout=10)
+            payload = event if raw else event.model_dump(mode="json")
+            await asyncio.wait_for(ws.send_json(payload), timeout=10)
 
-    with runtime.bus.subscribe() as queue:
+    with runtime.bus.subscribe(mode="raw" if raw else "normalized") as queue:
         try:
             async with anyio.create_task_group() as group:
 

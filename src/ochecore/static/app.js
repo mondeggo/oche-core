@@ -4,7 +4,7 @@ const labels = {
   unconfigured: "Not configured", disconnected: "Disconnected",
   awaiting_authorization: "Awaiting approval", authenticated: "Authorized",
   waiting_for_login: "Waiting for login", connecting: "Connecting…",
-  connected: "Connected", reconnecting: "Reconnecting…", error: "Error", stopped: "Stopped",
+  connected: "Connected", degraded: "Subscription rejected", reconnecting: "Reconnecting…", error: "Error", stopped: "Stopped",
 };
 let refreshing = false;
 let dirty = false;
@@ -126,9 +126,11 @@ async function refresh() {
     $("auth-state").textContent = labels[authState] ?? authState;
     $("cloud-state").textContent = labels[status.cloud.state] ?? status.cloud.state;
     $("live").textContent = "Service online";
-    $("count").textContent = status.events.received;
+    $("count").textContent = status.events.normalized;
     $("match").textContent = status.cloud.match_id ?? "—";
-    $("connection-error").textContent = [status.auth.error, status.cloud.error].filter(Boolean).join(" ");
+    $("connection-error").textContent = [status.auth.error, status.cloud.error,
+      ...(status.cloud.subscription_errors ?? []).map((item) => `${item.channel}: ${item.error}.`),
+    ].filter(Boolean).join(" ");
     $("device").hidden = !status.auth.device;
     if (status.auth.device) {
       const device = status.auth.device;

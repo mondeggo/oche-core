@@ -1,9 +1,10 @@
 import asyncio
-from collections import deque
+import json
+from collections import OrderedDict, deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, ValidationError
@@ -18,6 +19,7 @@ class Event(BaseModel):
     received_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str
     event: str
+    kind: Literal["raw", "normalized"] = "raw"
     channel: str | None = None
     topic: str | None = None
     snapshot: bool = False
@@ -31,7 +33,7 @@ class CloudMessage(BaseModel):
 
 
 def parse_cloud_message(raw: str | bytes) -> CloudMessage | None:
-    """Validate the transport envelope. Throw normalization belongs to phase 2."""
+    """Validate the cloud transport envelope before interpreting its contents."""
     try:
         return CloudMessage.model_validate_json(raw)
     except ValidationError:
@@ -44,8 +46,16 @@ def event_name(message: CloudMessage, board_id: str, match_id: str | None) -> st
             return "board.matches"
         if message.topic == f"{board_id}.events":
             return "board.events"
+        if message.topic == f"{board_id}.state":
+            return "board.state"
     if message.channel == "autodarts.matches" and match_id and message.topic == f"{match_id}.state":
         return "match.state"
+    if (
+        message.channel == "autodarts.matches"
+        and match_id
+        and message.topic == f"{match_id}.events"
+    ):
+        return "match.events"
     if message.channel == "autodarts.users" and message.topic.endswith(".events"):
         return "user.events"
     return None
@@ -68,9 +78,36 @@ def redact(value: Any) -> Any:
 class EventBus:
     def __init__(self, capacity: int = 100):
         self.history: deque[Event] = deque(maxlen=capacity)
+        self.normalized_history: deque[Event] = deque(maxlen=capacity)
+        self.raw_history: deque[Any] = deque(maxlen=capacity)
         self.queues: set[asyncio.Queue[Event]] = set()
+        self.normalized_queues: set[asyncio.Queue[Event]] = set()
+        self.raw_queues: set[asyncio.Queue[Any]] = set()
         self.sequence = 0
         self.dropped = 0
+        self.raw_received = 0
+        self.raw_dropped = 0
+
+    @staticmethod
+    def _deliver(value: Any, queues: set) -> int:
+        dropped = 0
+        for queue in queues:
+            if queue.full():
+                queue.get_nowait()
+                dropped += 1
+            queue.put_nowait(value)
+        return dropped
+
+    def record_raw(self, raw: str | bytes) -> Any:
+        """Preserve incoming JSON structure, including unknown fields and control frames."""
+        try:
+            value = redact(json.loads(raw))
+        except (ValueError, UnicodeDecodeError):
+            value = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+        self.raw_received += 1
+        self.raw_history.append(value)
+        self.raw_dropped += self._deliver(value, self.raw_queues)
+        return value
 
     def publish(self, source: str, event: str, data: dict, **kwargs: Any) -> Event:
         self.sequence += 1
@@ -78,18 +115,357 @@ class EventBus:
             sequence=self.sequence, source=source, event=event, data=redact(data), **kwargs
         )
         self.history.append(envelope)
-        for queue in self.queues:
-            if queue.full():
-                queue.get_nowait()
-                self.dropped += 1
-            queue.put_nowait(envelope)
+        self.dropped += self._deliver(envelope, self.queues)
+        if envelope.kind == "normalized":
+            self.normalized_history.append(envelope)
+            self.dropped += self._deliver(envelope, self.normalized_queues)
         return envelope
 
     @contextmanager
-    def subscribe(self, capacity: int = 100) -> Iterator[asyncio.Queue[Event]]:
-        queue: asyncio.Queue[Event] = asyncio.Queue(maxsize=capacity)
-        self.queues.add(queue)
+    def subscribe(
+        self, capacity: int = 100, mode: Literal["all", "normalized", "raw"] = "all"
+    ) -> Iterator[asyncio.Queue]:
+        queue: asyncio.Queue = asyncio.Queue(maxsize=capacity)
+        queues = {"all": self.queues, "normalized": self.normalized_queues, "raw": self.raw_queues}[
+            mode
+        ]
+        queues.add(queue)
         try:
             yield queue
         finally:
-            self.queues.discard(queue)
+            queues.discard(queue)
+
+    def clear(self) -> None:
+        self.history.clear()
+        self.normalized_history.clear()
+        self.raw_history.clear()
+
+
+class Segment(BaseModel):
+    number: int = Field(ge=0, le=25, strict=True)
+    multiplier: int = Field(ge=0, le=3, strict=True)
+    name: str
+    bed: str | None = None
+
+
+class Dart(BaseModel):
+    id: str = Field(min_length=1)
+    segment: Segment
+
+    def public(self, position: int) -> dict:
+        return {
+            "id": self.id,
+            "position": position,
+            "segment": self.segment.model_dump(),
+            "points": self.segment.number * self.segment.multiplier,
+        }
+
+
+class Turn(BaseModel):
+    id: str = Field(min_length=1)
+    player_id: str | None = Field(default=None, alias="playerId")
+    player: int | None = Field(default=None, ge=0, strict=True)
+    round: int | None = Field(default=None, ge=0, strict=True)
+    points: int | None = Field(default=None, strict=True)
+    busted: bool = False
+    finished_at: str | None = Field(default=None, alias="finishedAt")
+    throws: list[Dart] = Field(default_factory=list, max_length=3)
+
+
+class Player(BaseModel):
+    id: str = Field(min_length=1)
+    name: str = ""
+    board_id: str | None = Field(default=None, alias="boardId")
+    cpu_ppr: float | None = Field(default=None, alias="cpuPPR")
+
+    def public(self, index: int, board_id: str) -> dict:
+        return {
+            "id": self.id,
+            "index": index,
+            "name": self.name,
+            "board_id": self.board_id,
+            "is_local": self.board_id == board_id and self.cpu_ppr is None,
+            "is_bot": self.cpu_ppr is not None,
+        }
+
+
+class MatchFrame(BaseModel):
+    """Current AutoDarts state: turns are newest first, darts oldest first."""
+
+    id: str = Field(min_length=1)
+    variant: str
+    players: list[Player] = Field(min_length=1)
+    turns: list[Turn]
+    set: int = Field(ge=0, strict=True)
+    leg: int = Field(ge=0, strict=True)
+    round: int = Field(ge=0, strict=True)
+    player: int = Field(ge=0, strict=True)
+    game_scores: list[int] = Field(default_factory=list, alias="gameScores")
+    game_winner: int = Field(default=-1, alias="gameWinner", ge=-1, strict=True)
+    winner: int = Field(default=-1, ge=-1, strict=True)
+
+
+GameEventName = Literal[
+    "match_started",
+    "match_ended",
+    "player_changed",
+    "throw",
+    "throw_corrected",
+    "throw_removed",
+    "turn_end",
+    "bust",
+    "checkout",
+    "leg_win",
+    "match_win",
+    "takeout_started",
+    "takeout_finished",
+]
+
+
+class EventNormalizer:
+    """Interpret state transitions; keep raw envelopes available for diagnostics.
+
+    A REST snapshot or the first valid state establishes a silent baseline. Deduplication
+    is bounded and scoped to the selected match, not a persistent delivery guarantee.
+    """
+
+    def __init__(self, board_id: str, bus: EventBus):
+        self.board_id = board_id
+        self.bus = bus
+        self.match_id: str | None = None
+        self.frame: MatchFrame | None = None
+        self.turns: OrderedDict[tuple, Turn] = OrderedDict()
+        self.seen: OrderedDict[tuple, None] = OrderedDict()
+        self.takeout_phase: str | None = None
+        self.takeout_context: dict | None = None
+        self.synchronized = False
+        self.invalid_states = 0
+        self.emitted = 0
+
+    def select(self, match_id: str | None) -> None:
+        if match_id == self.match_id:
+            return
+        self.match_id, self.frame = match_id, None
+        self.turns.clear()
+        self.seen.clear()
+        self.takeout_phase = None
+        self.takeout_context = None
+        self.synchronized = False
+
+    def resync(self) -> None:
+        self.synchronized = False
+        self.takeout_phase = None
+        self.takeout_context = None
+
+    def _remember(self, key: tuple) -> bool:
+        if key in self.seen:
+            self.seen.move_to_end(key)
+            return False
+        self.seen[key] = None
+        if len(self.seen) > 4096:
+            self.seen.popitem(last=False)
+        return True
+
+    def _store(self, key: tuple, turn: Turn) -> None:
+        self.turns[key] = turn
+        self.turns.move_to_end(key)
+        if len(self.turns) > 256:
+            self.turns.popitem(last=False)
+
+    @staticmethod
+    def _key(frame: MatchFrame, turn: Turn) -> tuple:
+        return frame.id, frame.set, frame.leg, turn.id
+
+    def _context(
+        self, frame: MatchFrame | None, turn: Turn | None = None, player_index: int | None = None
+    ) -> dict:
+        result = {"board_id": self.board_id, "match_id": self.match_id}
+        if frame is None:
+            return result
+        index = frame.player if player_index is None else player_index
+        if turn is not None and player_index is None:
+            if turn.player_id:
+                index = next((i for i, p in enumerate(frame.players) if p.id == turn.player_id), -1)
+            elif turn.player is not None:
+                index = turn.player
+        player = frame.players[index] if 0 <= index < len(frame.players) else None
+        result.update(
+            {
+                "variant": frame.variant,
+                "set": frame.set,
+                "leg": frame.leg,
+                "round": turn.round if turn and turn.round is not None else frame.round,
+                "turn_id": turn.id if turn else None,
+                "player": player.public(index, self.board_id) if player else None,
+                "remaining": frame.game_scores[index]
+                if 0 <= index < len(frame.game_scores)
+                else None,
+            }
+        )
+        return result
+
+    def _emit(
+        self,
+        name: GameEventName,
+        raw: Event,
+        data: dict,
+        key: tuple | None = None,
+        silent: bool = False,
+    ) -> None:
+        if key is not None and not self._remember((name, *key)):
+            return
+        if not silent:
+            self.bus.publish("core", name, data, kind="normalized", received_at=raw.received_at)
+            self.emitted += 1
+
+    def consume(self, raw: Event) -> None:
+        if raw.event == "match.state":
+            self._match_state(raw)
+        elif raw.event == "board.matches":
+            action, match_id = raw.data.get("event"), raw.data.get("id")
+            if action == "start" and isinstance(match_id, str) and match_id:
+                self.select(match_id)
+                self._emit("match_started", raw, self._context(None), (match_id,))
+            elif action in {"finish", "delete", "end"} and match_id == self.match_id:
+                self._emit(
+                    "match_ended", raw, {**self._context(self.frame), "reason": action}, (match_id,)
+                )
+        elif raw.event in {"board.events", "board.state", "match.events"}:
+            self._board_event(raw)
+
+    def _board_event(self, raw: Event) -> None:
+        action = raw.data.get("event", raw.data.get("status", ""))
+        if not isinstance(action, str) or raw.snapshot:
+            return
+        action = action.lower().replace("_", " ").replace("-", " ")
+        phases = {
+            "takeout started": "takeout_started",
+            "takeout start": "takeout_started",
+            "takeout finished": "takeout_finished",
+            "takeout finish": "takeout_finished",
+            "darts pulled": "takeout_finished",
+        }
+        phase = phases.get(action)
+        if phase and phase != self.takeout_phase:
+            self.takeout_phase = phase
+            turn = self.frame.turns[0] if self.frame and self.frame.turns else None
+            context = self._context(self.frame, turn)
+            if phase == "takeout_started":
+                self.takeout_context = context
+            self._emit(phase, raw, self.takeout_context or context)
+            if phase == "takeout_finished":
+                self.takeout_context = None
+        elif action in {"throw detected", "manual reset"}:
+            self.takeout_phase = None
+            self.takeout_context = None
+
+    def _match_state(self, raw: Event) -> None:
+        # Activation-only updates are not full scoring states.
+        if "turns" not in raw.data:
+            return
+        try:
+            frame = MatchFrame.model_validate(raw.data)
+            if max(frame.player, frame.game_winner, frame.winner) >= len(frame.players):
+                raise ValueError("Player index outside roster")
+            for turn in frame.turns:
+                if len({dart.id for dart in turn.throws}) != len(turn.throws):
+                    raise ValueError("Duplicate dart ID")
+        except (ValidationError, ValueError):
+            self.invalid_states += 1
+            return
+        if frame.id != self.match_id:
+            return
+        silent = raw.snapshot or not self.synchronized
+        previous = self.frame
+        current = frame.turns[0] if frame.turns else None
+        if silent:
+            for turn in frame.turns:
+                key = self._key(frame, turn)
+                self._store(key, turn)
+                for dart in turn.throws:
+                    self._remember(("throw", *key, dart.id))
+                self._outcomes(raw, frame, turn, silent=True, current=turn is current)
+        else:
+            if previous and previous.turns:
+                old_turn = previous.turns[0]
+                if current is None or self._key(previous, old_turn) != self._key(frame, current):
+                    forward = current is not None and self._key(frame, current) not in self.turns
+                    if old_turn.throws and forward:
+                        self._emit(
+                            "turn_end",
+                            raw,
+                            {
+                                **self._context(previous, old_turn),
+                                "score": old_turn.points,
+                                "busted": old_turn.busted,
+                            },
+                            self._key(previous, old_turn),
+                        )
+            if previous and frame.players[frame.player].id != previous.players[previous.player].id:
+                self._emit("player_changed", raw, self._context(frame))
+            if current:
+                self._darts(raw, frame, current)
+                self._outcomes(raw, frame, current)
+        self.frame = frame
+        self.synchronized = True
+
+    def _darts(self, raw: Event, frame: MatchFrame, turn: Turn) -> None:
+        key = self._key(frame, turn)
+        old = self.turns.get(key)
+        old_darts = {dart.id: dart for dart in old.throws} if old else {}
+        new_ids = {dart.id for dart in turn.throws}
+        replacements = set()
+        context = self._context(frame, turn)
+        for position, dart in enumerate(turn.throws, 1):
+            before = old_darts.get(dart.id)
+            if before is None and old and position <= len(old.throws):
+                candidate = old.throws[position - 1]
+                if candidate.id not in new_ids:
+                    before = candidate
+                    replacements.add(candidate.id)
+            data = {**context, "dart": dart.public(position), "turn_score": turn.points}
+            if before:
+                if before != dart:
+                    self._emit(
+                        "throw_corrected", raw, {**data, "previous_dart": before.public(position)}
+                    )
+                self._remember(("throw", *key, dart.id))
+            elif self._remember(("throw", *key, dart.id)):
+                self.takeout_phase = None
+                self.takeout_context = None
+                self._emit("throw", raw, data)
+            else:
+                self._emit("throw_corrected", raw, {**data, "restored": True})
+        if old:
+            for position, dart in enumerate(old.throws, 1):
+                if dart.id not in new_ids and dart.id not in replacements:
+                    self._emit("throw_removed", raw, {**context, "dart": dart.public(position)})
+        self._store(key, turn)
+
+    def _outcomes(
+        self, raw: Event, frame: MatchFrame, turn: Turn, silent: bool = False, current: bool = True
+    ) -> None:
+        key = self._key(frame, turn)
+        context = self._context(frame, turn)
+        data = {**context, "score": turn.points, "busted": turn.busted}
+        last_dart = turn.throws[-1].id if turn.throws else ""
+        if turn.busted:
+            self._emit("bust", raw, data, (*key, last_dart), silent)
+        won = current and (frame.game_winner >= 0 or frame.winner >= 0)
+        if len(turn.throws) >= 3 or turn.busted or turn.finished_at or won:
+            self._emit("turn_end", raw, data, key, silent)
+        if won:
+            winner = frame.game_winner if frame.game_winner >= 0 else frame.winner
+            win_data = {**self._context(frame, turn, winner), "score": turn.points}
+            win_key = (frame.id, frame.set, frame.leg, last_dart)
+            if frame.variant in {"X01", "Random Checkout"}:
+                self._emit("checkout", raw, win_data, win_key, silent)
+            self._emit("leg_win", raw, win_data, win_key, silent)
+            if frame.winner >= 0:
+                self._emit(
+                    "match_win",
+                    raw,
+                    {**win_data, **self._context(frame, turn, frame.winner)},
+                    win_key,
+                    silent,
+                )

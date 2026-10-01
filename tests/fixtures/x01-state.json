@@ -1,0 +1,20 @@
+{
+  "id": "22222222-2222-4222-8222-222222222222",
+  "variant": "X01",
+  "set": 1,
+  "leg": 1,
+  "round": 1,
+  "player": 0,
+  "gameWinner": -1,
+  "winner": -1,
+  "gameFinished": false,
+  "finished": false,
+  "gameScores": [501, 501],
+  "players": [
+    {"id": "local-player", "name": "Local player", "boardId": "11111111-1111-4111-8111-111111111111", "cpuPPR": null},
+    {"id": "remote-player", "name": "Remote player", "boardId": "33333333-3333-4333-8333-333333333333", "cpuPPR": null}
+  ],
+  "turns": [
+    {"id": "visit-1", "round": 1, "turn": 1, "playerId": "local-player", "points": 0, "score": 501, "busted": false, "finishedAt": null, "throws": []}
+  ]
+}

@@ -108,24 +108,32 @@ def test_cli_no_wait_leaves_approval_in_service(settings, capsys):
         assert not app.state.runtime.auth.poll_task.done()
 
 
-def test_cli_event_history_is_available_without_ui(settings, capsys):
+@pytest.mark.parametrize("raw", [True, False])
+def test_cli_event_history_is_available_without_ui(settings, capsys, raw):
     settings.ui_enabled = False
     app = create_app(settings)
     with TestClient(app) as client:
-        app.state.runtime.bus.publish("cloud", "test", {"score": 60})
-        execute(parser().parse_args(["events"]), client)
-        assert json.loads(capsys.readouterr().out)[0]["data"] == {"score": 60}
+        app.state.runtime.bus.record_raw('{"score":60}')
+        app.state.runtime.bus.publish("core", "throw", {"score": 60}, kind="normalized")
+        execute(parser().parse_args(["events"] + (["--raw"] if raw else [])), client)
+        event = json.loads(capsys.readouterr().out)[0]
+        assert (event if raw else event["data"]) == {"score": 60}
 
 
-async def test_cli_follow_streams_json_and_reports_disconnect(capsys):
+@pytest.mark.parametrize("raw", [True, False])
+async def test_cli_follow_streams_json_and_reports_disconnect(capsys, raw):
     async def server(ws):
-        assert ws.request.path == "/events"
+        assert ws.request.path == ("/events/raw" if raw else "/events")
         await ws.send(json.dumps({"event": "board.events", "data": {"score": 60}}))
 
     async with serve(server, "127.0.0.1", 0) as ws_server:
         port = ws_server.sockets[0].getsockname()[1]
         result = await asyncio.wait_for(
-            asyncio.to_thread(run, ["--url", f"http://127.0.0.1:{port}", "events", "--follow"]),
+            asyncio.to_thread(
+                run,
+                ["--url", f"http://127.0.0.1:{port}", "events", "--follow"]
+                + (["--raw"] if raw else []),
+            ),
             timeout=5,
         )
     assert result == 1

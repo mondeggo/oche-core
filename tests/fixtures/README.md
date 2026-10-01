@@ -1,0 +1,12 @@
+# Event fixtures
+
+`x01-state.json` is synthetic, with invented identities. Its structure follows the supplied
+Tools for AutoDarts `utils/websocket-helpers.ts` interfaces (`IMatch`, `ITurn`, `IThrow`,
+`ISegment`, `IPlayer`). It is not a recording of a live match.
+
+The replay tests build transitions from this state. Newest-first turns, dart IDs that remain
+stable during corrections, repeated `finishedAt` updates and winner fields follow
+`utils/settle-game-data.ts`, `utils/win.ts` and darts-caller's `process_match_x01`.
+Takeout strings follow AutoGlow-2's `_handle_raw_message` and darts-caller's board handler.
+
+Keep account identities, coordinates, profiles, tokens and private live captures out of fixtures.

@@ -14,7 +14,19 @@ from websockets.exceptions import InvalidStatus
 
 from ochecore.autodarts.auth import DeviceAuth, safe_error
 from ochecore.autodarts.errors import ConnectionProblem, LoginRequired
-from ochecore.events import EventBus, event_name, parse_cloud_message, redact
+from ochecore.events import EventBus, EventNormalizer, event_name, parse_cloud_message, redact
+
+
+def board_online(board: dict | None) -> bool | None:
+    if not board:
+        return None
+    state = board.get("state")
+    candidates = [
+        state.get("connected") if isinstance(state, dict) else None,
+        board.get("connected"),
+        board.get("online"),
+    ]
+    return next((value for value in candidates if isinstance(value, bool)), None)
 
 
 @dataclass
@@ -30,7 +42,7 @@ class MatchState:
 
     def update(self, data: dict[str, Any]) -> None:
         if self.match_id and data.get("id", self.match_id) == self.match_id:
-            self.latest = redact(data)
+            self.latest = {**(self.latest or {}), **redact(data)}
 
 
 class CloudConnection:
@@ -46,6 +58,7 @@ class CloudConnection:
         self.auth = auth
         self.board_id = board_id
         self.bus = bus
+        self.normalizer = EventNormalizer(board_id, bus)
         self.reconcile_interval = reconcile_interval
         self.ticket_url = "https://play.ws.autodarts.com/ms/v0/tickets"
         self.ws_url = "wss://play.ws.autodarts.com/ms/v0/subscribe"
@@ -56,6 +69,8 @@ class CloudConnection:
         self.last_message_at: str | None = None
         self.reconnects = 0
         self.invalid_messages = 0
+        self.subscriptions: set[tuple[str, str]] = set()
+        self.subscription_errors: dict[tuple[str, str], str] = {}
 
     @property
     def match_id(self) -> str | None:
@@ -66,11 +81,15 @@ class CloudConnection:
             "state": self.state,
             "error": self.error,
             "board_id": self.board_id or None,
-            "board_online": self.board.get("connected") if self.board else None,
+            "board_online": board_online(self.board),
             "match_id": self.match_id,
             "last_message_at": self.last_message_at,
             "reconnects": self.reconnects,
             "invalid_messages": self.invalid_messages,
+            "subscription_errors": [
+                {"channel": channel, "topic": topic, "error": error}
+                for (channel, topic), error in self.subscription_errors.items()
+            ],
         }
 
     async def get(self, path: str, missing_ok: bool = False) -> dict | None:
@@ -93,15 +112,11 @@ class CloudConnection:
             except ValueError as exc:
                 raise ConnectionProblem("AutoDarts returned an invalid board ID.") from exc
             name = item.get("name")
-            online = item.get("connected", item.get("online"))
-            if not isinstance(online, bool):
-                state = item.get("state")
-                online = state.get("connected") if isinstance(state, dict) else None
             boards.append(
                 {
                     "id": board_id,
                     "name": name.strip() if isinstance(name, str) and name.strip() else board_id,
-                    "online": online if isinstance(online, bool) else None,
+                    "online": board_online(item),
                 }
             )
         return boards
@@ -138,24 +153,48 @@ class CloudConnection:
 
     async def subscription(self, ws, channel: str, topic: str, action: str = "subscribe") -> None:
         await ws.send(json.dumps({"type": action, "channel": channel, "topic": topic}))
+        key = (channel, topic)
+        if action == "subscribe":
+            self.subscriptions.add(key)
+        else:
+            self.subscriptions.discard(key)
+        self.subscription_errors.pop(key, None)
+        self._update_subscription_status()
+
+    def _update_subscription_status(self) -> None:
+        if self.state not in {"connected", "degraded"}:
+            return
+        required_failed = any(
+            channel != "autodarts.users" for channel, _ in self.subscription_errors
+        )
+        self.state = "degraded" if required_failed else "connected"
+        self.error = (
+            "AutoDarts rejected a board or match subscription." if required_failed else None
+        )
+
+    def publish(self, event: str, data: dict, **kwargs: Any) -> None:
+        raw = self.bus.publish("cloud", event, data, **kwargs)
+        self.normalizer.consume(raw)
 
     async def set_match(self, ws, match_id: str | None) -> None:
         if match_id == self.match_id:
             return
         if self.match_id:
-            await self.subscription(
-                ws, "autodarts.matches", f"{self.match_id}.state", "unsubscribe"
-            )
+            for topic in ("state", "events"):
+                await self.subscription(
+                    ws, "autodarts.matches", f"{self.match_id}.{topic}", "unsubscribe"
+                )
         self.match.select(match_id)
+        self.normalizer.select(match_id)
         if match_id:
+            await self.subscription(ws, "autodarts.matches", f"{match_id}.events")
             await self.subscription(ws, "autodarts.matches", f"{match_id}.state")
             state = await self.get(
                 f"/gs/v0/matches/{quote(match_id, safe='')}/state", missing_ok=True
             )
             if state is not None:
                 self.match.update(state)
-                self.bus.publish(
-                    "cloud",
+                self.publish(
                     "match.state",
                     state,
                     channel="autodarts.matches",
@@ -172,18 +211,39 @@ class CloudConnection:
         await self.set_match(ws, match_id)
 
     async def on_message(self, ws, raw: str | bytes) -> None:
+        payload = self.bus.record_raw(raw)
+        if isinstance(payload, dict) and payload.get("type") == "error":
+            channel, topic = payload.get("channel"), payload.get("topic")
+            if isinstance(channel, str) and isinstance(topic, str):
+                key = (channel, topic)
+                if key in self.subscriptions:
+                    # Do not copy arbitrary upstream error text into connection status.
+                    self.subscription_errors[key] = (
+                        "unauthorized client"
+                        if payload.get("error") == "unauthorized client"
+                        else "subscription rejected"
+                    )
+                    self._update_subscription_status()
+                self.last_message_at = datetime.now(UTC).isoformat()
+                return
         message = parse_cloud_message(raw)
         if message is None:
             self.invalid_messages += 1
             return
         self.last_message_at = datetime.now(UTC).isoformat()
+        self.subscription_errors.pop((message.channel, message.topic), None)
+        self._update_subscription_status()
         event = event_name(message, self.board_id, self.match_id)
         if event is None:
             return
         data = message.data
         if event == "match.state":
+            if data.get("id", self.match_id) != self.match_id:
+                return
             self.match.update(data)
-        self.bus.publish("cloud", event, data, channel=message.channel, topic=message.topic)
+        elif event == "board.state":
+            self.board = {**(self.board or {}), "state": data}
+        self.publish(event, data, channel=message.channel, topic=message.topic)
         if event == "board.matches":
             match_id = data.get("id")
             if data.get("event") == "start" and isinstance(match_id, str) and match_id:
@@ -217,8 +277,12 @@ class CloudConnection:
                 ) as ws:
                     opened_at = time.monotonic()
                     self.match.select(None)
+                    self.normalizer.resync()
+                    self.subscriptions.clear()
+                    self.subscription_errors.clear()
                     await self.subscription(ws, "autodarts.boards", f"{self.board_id}.matches")
                     await self.subscription(ws, "autodarts.boards", f"{self.board_id}.events")
+                    await self.subscription(ws, "autodarts.boards", f"{self.board_id}.state")
                     await self.subscription(ws, "autodarts.users", f"{user['sub']}.events")
                     await self.reconcile(ws)
                     self.state, self.error = "connected", None

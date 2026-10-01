@@ -1,11 +1,11 @@
-# Phase 1 validation
+# Connection and event validation
 
-Updated October 2, 2026 after separating HTTP routes and WebSocket streaming from application
-setup. Terminal controls and the optional UI share the same headless service.
+Updated October 2, 2026 after implementing game events, separate raw and normalized streams,
+and a Docker bind mount. Terminal controls and the optional UI share the same headless service.
 
 ## Automated checks
 
-**57 tests passed**, covering OAuth approval/errors, polling slowdown, concurrent refresh,
+**85 tests passed**, covering OAuth approval/errors, polling slowdown, concurrent refresh,
 token rotation/storage, expired or corrupt sessions, cloud bootstrap, match changes, stale
 events, HTTP 401 retry, local WebSocket test-server reconnection, bounded
 dispatch, API configuration, origin checks and WebSocket cleanup.
@@ -27,6 +27,18 @@ and omission of private upstream fields. Discovery leaves saved configuration un
 The complete suite passed after moving routes into `http.py` and `websocket.py`, including
 HTTP configuration, headless CLI access, live WebSocket delivery and subscriber cleanup.
 
+The X01 replay tests cover newest-first visits, individual and batched darts, corrections,
+replacement/restoration of dart IDs, undo, miss versus bust, winner index zero, repeated finish
+messages, leg changes, roster reordering, takeout ownership and silent reconnection snapshots.
+Fixtures are synthetic and derived from the supplied resources, not live scoring recordings.
+
+API/CLI tests verify the separate normalized and raw routes, preservation of unknown upstream
+fields, raw-frame credential redaction, independent bounded queues, and headless operation.
+A cloud integration test checks that REST snapshots are excluded from the raw stream and
+live full states yield normalized events without duplicates after reconnecting.
+Subscription-error tests verify raw preservation, optional user-topic warnings, degraded
+readiness for rejected game topics, continued delivery on healthy topics and error recovery.
+
 Ruff checks and formatting passed for `src/ochecore/` and `tests/`. The simplified UI passed
 JavaScript syntax validation. No new dependencies were added.
 
@@ -35,7 +47,11 @@ JavaScript syntax validation. No new dependencies were added.
 `docker compose up --build -d --wait --wait-timeout 60` successfully rebuilt the image from `src/ochecore/` and
 recreated the container. Docker reports it as healthy, and `GET /healthz` returns
 `{"status":"ok","version":"0.1.0"}` at `http://127.0.0.1:9180`.
-The image retains UID/GID 10001 and the existing data volume.
+The image retains UID/GID 10001. The service now binds `./data` to `/data`.
+The user copied the stopped container's data to that folder after automatic approval review
+blocked the agent's migration command. Docker inspection confirmed a bind mount, saved login
+restored successfully, and the original named volume was retained. Tokens and connection
+files are ignored by Git and excluded from the Docker build context.
 
 The host CLI and container CLI successfully read the running service's status and
 configuration. An isolated container with `OCHECORE_UI_ENABLED=false` returned 404 for
@@ -70,10 +86,18 @@ development Client ID, `darts-caller`.
 After the route refactor and Docker rebuild on October 2, the service restored authentication
 and reconnected to the selected board's cloud stream without another login.
 
+The raw stream exposed an `unauthorized client` response for `autodarts.users` with the
+development Client ID. Status now lists that optional subscription failure instead of
+counting it as malformed input. No board-topic rejection was observed; full game delivery
+still needs live acceptance. Both event history endpoints and the host/container CLI were
+checked against the rebuilt service.
+
 ## Remaining verification
 
 - Gameplay acceptance: verify throw payloads, corrections, match changes and recovery during
   a real match. Receiving initial cloud events does not establish complete gameplay coverage.
+  The prior match-state endpoint returned 404 during this change; current normalization
+  coverage is based on reference contracts and replay fixtures. See [event evidence](EVENTS.md).
 - Repeat authentication with an OAuth Client ID assigned to OcheCore before distribution.
 - Visual/browser acceptance: the browser tool previously denied local access to
   `http://127.0.0.1:9180`. No alternative browser automation bypassed that decision.

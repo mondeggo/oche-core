@@ -2,15 +2,17 @@
 
 Headless AutoDarts event gateway built with Python, uv and Docker.
 
-**Phase 1:** OAuth device login, cloud events, automatic reconnection, terminal controls and
-a WebSocket event stream. A small optional web interface uses the same API as the CLI.
+OAuth device login, board discovery, automatic reconnection and normalized game events,
+with separate raw AutoDarts streams. A small optional web interface uses the same API as the CLI.
 The service owns authentication, persistence and event processing and keeps running when
 either client closes. It starts without a configured board. Audio, WLED, MQTT, Home Assistant
-and gameplay normalization are planned for later phases.
+are planned for later phases. X01 event interpretation is implemented and tested against
+the supplied reference contracts; full live gameplay acceptance remains to be done.
 
 - [Project plan](docs/PLAN.md)
 - [API research](docs/AUTODARTS_API.md)
 - [Validation notes](docs/VALIDATION.md)
+- [Event API and normalization rules](docs/EVENTS.md)
 
 ## Structure
 
@@ -25,7 +27,7 @@ OcheCore/
 │       ├── config.py        # validated settings
 │       ├── runtime.py       # connection lifecycle
 │       ├── storage.py       # atomic persistence
-│       ├── events.py        # event models, parsing and bounded dispatch
+│       ├── events.py        # parsing, game event normalization and bounded dispatch
 │       ├── autodarts/
 │       │   ├── auth.py
 │       │   ├── cloud.py     # cloud connection and match tracking
@@ -71,6 +73,8 @@ uv run ochecore boards
 uv run ochecore config --board-id YOUR_BOARD_UUID
 uv run ochecore events
 uv run ochecore events --follow
+uv run ochecore events --raw
+uv run ochecore events --raw --follow
 uv run ochecore logout
 ```
 
@@ -89,6 +93,11 @@ Use `--client-id YOUR_CLIENT_ID` to update an unlocked client field, or `--board
 the selected board. Status, configuration and event history use JSON. Live events use one JSON
 object per line; a lost stream exits with an error so a supervisor can restart the command.
 Commands return nonzero on failure and 130 on interruption.
+
+`events` reads normalized game events. Add `--raw` to read incoming AutoDarts WebSocket
+frames with their original JSON structure. Both streams have independent histories and
+subscriber queues. Raw frames include duplicates and control messages; REST snapshots are
+not inserted into the raw stream. Known credential fields are redacted.
 
 The default control address is `http://127.0.0.1:9180`. Override it with the `OCHECORE_URL`
 environment variable or a flag before the command:
@@ -141,7 +150,8 @@ docker compose exec ochecore ochecore events --follow
 3. Install/configure AutoDarts Desktop or Headless, then run `ochecore boards`. The UI loads
    account boards after login and has a **Refresh boards** button.
 4. Select your board in the UI and save, or use its discovered ID with the CLI.
-5. Start a match and check the cloud connection and incoming `match.state` events.
+5. Start a match and check `ochecore events --follow` for game events, or
+   `ochecore events --raw --follow` for incoming AutoDarts frames.
 
 Your password stays on AutoDarts. Tokens are refreshed and stored atomically in
 `data/tokens.json` with owner-only permissions on Linux. On Windows, protect the directory
@@ -184,15 +194,19 @@ save. Old YAML/environment options for that adapter are also ignored. See the
 | `GET /api/boards` | Account boards and current selection; requires login |
 | `POST /api/auth/login` | Start device authorization |
 | `POST /api/auth/logout` | Remove the local session |
-| `GET /api/events` | Latest 100 events, held in memory |
-| `WS /events` | Live events, without replay or delivery acknowledgements |
+| `GET /api/events` | Latest 100 normalized game events |
+| `GET /api/events/raw` | Latest 100 incoming AutoDarts frames, preserving their JSON structure |
+| `WS /events` | Live normalized game events |
+| `WS /events/raw` | Live incoming AutoDarts frames |
 | `/docs` | API documentation when UI is enabled; schema always at `/openapi.json` |
 
 POST/PUT requests require `Content-Type: application/json`; use `{}` for login/logout.
-The WebSocket uses native JSON, not Socket.IO. Slow subscribers have bounded queues and lose
-oldest messages on overflow. Sequence gaps reveal losses; `dropped_deliveries` counts them.
-A `snapshot: true` message is initial state, not a new throw. Phase 2 will implement
-normalization and deduplication; this stream is not a durable event journal.
+WebSockets use native JSON, not Socket.IO. Slow subscribers have bounded queues and lose
+oldest messages on overflow; status reports separate delivery-drop counters for each stream.
+Histories are held in memory, with no WebSocket replay or delivery acknowledgements.
+REST snapshots establish a silent baseline. Corrections and removals have distinct events,
+and repeated states do not reannounce darts or wins. See [event rules](docs/EVENTS.md) for
+the supported payload contract and deduplication limits.
 
 The interface is for trusted local use and binds to `127.0.0.1`. For a trusted LAN, set
 `OCHECORE_HOST=0.0.0.0` with uv or `OCHECORE_PUBLISH_HOST=0.0.0.0` with Docker.

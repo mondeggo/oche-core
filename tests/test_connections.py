@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -13,6 +14,57 @@ from ochecore.autodarts.errors import ConnectionProblem
 from ochecore.events import EventBus
 
 
+async def test_cloud_snapshot_and_live_state_produce_separate_streams(tmp_path):
+    state = json.loads((Path(__file__).parent / "fixtures/x01-state.json").read_text())
+
+    def handler(request):
+        return httpx.Response(200, json=state)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        auth = DeviceAuth(http, "https://api.autodarts.com", "test", tmp_path / "tokens.json")
+        tokens(auth)
+        bus, socket = EventBus(), Socket()
+        cloud = CloudConnection(http, auth, BOARD_ID, bus)
+        await cloud.set_match(socket, MATCH_ID)
+        assert not bus.raw_history and not bus.normalized_history
+        state["turns"][0]["throws"] = [
+            {
+                "id": "dart-1",
+                "segment": {"name": "T20", "number": 20, "multiplier": 3, "bed": "Triple"},
+            }
+        ]
+        state["turns"][0]["points"] = 60
+        state["gameScores"][0] = 441
+        message = {
+            "channel": "autodarts.matches",
+            "topic": f"{MATCH_ID}.state",
+            "data": state,
+            "extra_metadata": "preserved",
+        }
+        await cloud.on_message(socket, json.dumps(message))
+        assert list(bus.raw_history) == [message]
+        assert [event.event for event in bus.normalized_history] == ["throw"]
+        assert bus.normalized_history[-1].data["remaining"] == 441
+        await cloud.on_message(socket, json.dumps(message))
+        assert len(bus.raw_history) == 2 and len(bus.normalized_history) == 1
+        await cloud.on_message(
+            socket,
+            json.dumps(
+                {
+                    "channel": "autodarts.boards",
+                    "topic": f"{BOARD_ID}.state",
+                    "data": {"connected": True},
+                }
+            ),
+        )
+        assert cloud.status()["board_online"] is True
+        cloud.match.select(None)
+        cloud.normalizer.resync()
+        await cloud.set_match(socket, MATCH_ID)
+        await cloud.on_message(socket, json.dumps(message))
+        assert len(bus.normalized_history) == 1
+
+
 class Socket:
     def __init__(self):
         self.sent = []
@@ -23,6 +75,57 @@ class Socket:
 
 def tokens(auth):
     auth._save({"access_token": "access", "refresh_token": "refresh", "expires_in": 900})
+
+
+@pytest.mark.parametrize("channel", ["autodarts.users", "autodarts.boards", "autodarts.matches"])
+async def test_subscription_rejection_is_raw_and_visible_without_stopping_other_topics(
+    tmp_path, channel
+):
+    async with httpx.AsyncClient() as http:
+        auth = DeviceAuth(http, "https://api.autodarts.com", "test", tmp_path / "tokens.json")
+        cloud = CloudConnection(http, auth, BOARD_ID, EventBus())
+        cloud.state = "connected"
+        socket = Socket()
+        topic = "selected.events"
+        await cloud.subscription(socket, channel, topic)
+        error = {
+            "type": "error",
+            "channel": channel,
+            "topic": topic,
+            "error": "unauthorized client",
+        }
+        await cloud.on_message(socket, json.dumps(error))
+        await cloud.on_message(socket, json.dumps(error))
+        assert cloud.invalid_messages == 0
+        assert cloud.last_message_at is not None
+        assert list(cloud.bus.raw_history) == [error, error]
+        assert not cloud.bus.normalized_history
+        assert cloud.status()["subscription_errors"] == [
+            {"channel": channel, "topic": topic, "error": "unauthorized client"}
+        ]
+        expected_state = "connected" if channel == "autodarts.users" else "degraded"
+        assert cloud.state == expected_state
+        # A healthy topic must not conceal a different rejected subscription.
+        await cloud.on_message(
+            socket,
+            json.dumps(
+                {
+                    "channel": "autodarts.boards",
+                    "topic": f"{BOARD_ID}.state",
+                    "data": {"connected": True},
+                }
+            ),
+        )
+        assert cloud.status()["board_online"] is True
+        assert cloud.state == expected_state
+        await cloud.on_message(socket, json.dumps({"channel": channel, "topic": topic, "data": {}}))
+        assert cloud.state == "connected" and not cloud.subscription_errors
+        await cloud.on_message(socket, json.dumps({**error, "error": "private upstream text"}))
+        assert "private upstream text" not in json.dumps(cloud.status())
+        await cloud.subscription(socket, channel, topic, "unsubscribe")
+        assert cloud.state == "connected" and not cloud.subscription_errors
+        await cloud.on_message(socket, json.dumps(error))
+        assert not cloud.subscription_errors  # Late rejection of a removed topic.
 
 
 async def test_cloud_bootstrap_match_switch_and_stale_events(tmp_path):
@@ -60,7 +163,7 @@ async def test_cloud_bootstrap_match_switch_and_stale_events(tmp_path):
             ),
         )
         assert cloud.match_id == new_match
-        assert socket.sent[-2]["type"] == "unsubscribe"
+        assert socket.sent[-3]["type"] == "unsubscribe"
         count = bus.sequence
         await cloud.on_message(
             socket,
@@ -163,7 +266,7 @@ async def test_websocket_reconnect_restores_all_subscriptions(tmp_path):
     async def server(ws):
         assert "authorization" not in ws.request.headers
         assert parse_qs(urlsplit(ws.request.path).query) == {"code": [tickets[-1]]}
-        subscriptions = [json.loads(await ws.recv()) for _ in range(4)]
+        subscriptions = [json.loads(await ws.recv()) for _ in range(6)]
         connections.append(subscriptions)
         if len(connections) == 1:
             await ws.close(code=1012, reason="restart")
@@ -209,7 +312,7 @@ async def test_websocket_reconnect_restores_all_subscriptions(tmp_path):
                         while (await queue.get()).data.get("marker") != "after-reconnect":
                             pass
                     assert connections[0] == connections[1]
-                    assert len(connections[1]) == 4
+                    assert len(connections[1]) == 6
                     assert cloud.reconnects == 1
                     assert cloud.state == "connected"
                     assert len(tickets) == 2

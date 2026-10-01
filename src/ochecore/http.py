@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from ochecore import __version__
 from ochecore.config import ConnectionConfig
+from ochecore.events import Event
 
 
 def same_origin(origin: str | None, host: str, scheme: str) -> bool:
@@ -82,7 +83,11 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
         return {"disconnected": True}
 
     @router.get("/api/events")
-    async def events(request: Request):
-        return list(request.app.state.runtime.bus.history)
+    async def events(request: Request) -> list[Event]:
+        return list(request.app.state.runtime.bus.normalized_history)
+
+    @router.get("/api/events/raw")
+    async def raw_events(request: Request):
+        return list(request.app.state.runtime.bus.raw_history)
 
     return router

@@ -91,20 +91,28 @@ are not persisted or exposed in status responses. Example subscription:
 |---|---|---|
 | `autodarts.boards` | `{boardId}.matches` | `board.matches` |
 | `autodarts.boards` | `{boardId}.events` | `board.events` |
+| `autodarts.boards` | `{boardId}.state` | `board.state` |
 | `autodarts.users` | `{userId}.events` | `user.events` |
 | `autodarts.matches` | `{matchId}.state` | `match.state` |
+| `autodarts.matches` | `{matchId}.events` | `match.events` |
 
 Subscribe to board/user topics, read the board, subscribe to its match, and load a REST snapshot.
 Remove the previous subscription when the match changes. Reconcile periodically to catch
 missed lifecycle events. Restore subscriptions and reload state after reconnecting.
+
+On October 2, the development `darts-caller` Client ID was rejected for the optional
+`autodarts.users` subscription with `unauthorized client`. This appears in the raw API and
+`cloud.subscription_errors`; it does not supply normalized game events. Rejected board or
+match subscriptions mark the connection `degraded` and readiness returns 503.
 
 References: supplied caller functions `on_open_autodarts`, `listen_to_match` and
 `on_message_autodarts`; Tools `entrypoints/match.content/index.ts`; and the
 [ATA API catalogue](https://github.com/thomasasen/autodarts_local_tournament/blob/main/docs/autodarts-api-capabilities.md).
 
 OcheCore keeps connection and match tracking in `src/ochecore/autodarts/cloud.py`,
-with event validation and dispatch in `src/ochecore/events.py`. Phase 1 validates transport
-envelopes; gameplay interpretation and deduplication come in phase 2.
+with event validation, normalization and dispatch in `src/ochecore/events.py`. The raw API
+retains incoming WebSocket frames; the normalized API exposes interpreted game events.
+See [event contracts](EVENTS.md) for reference evidence and current coverage.
 
 ## Supplied references
 
@@ -150,7 +158,7 @@ Other useful references for later work:
   now exposes discovery through `/api/boards`, the `boards` CLI command and the UI selector.
   The response includes only ID, name and online status; it does not select a board.
 - AutoGlow subscribes to board `state`, `events` and `matches`, plus match `state` and
-  `events`. Board state and match events are additional candidates for phase 2 captures.
+  `events`. OcheCore now subscribes to all these topics and preserves them in the raw stream.
 - Its refresh helper tries three endpoints and two Client IDs. OcheCore retains the
   documented `/auth/v1/refresh` request with the same Client ID used for login.
 - Its AutoDarts adapter uses cloud services. Links to a board's local manager in the UI

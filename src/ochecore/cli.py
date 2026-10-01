@@ -65,6 +65,9 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("logout", help="Remove the service's saved AutoDarts session.")
     events = commands.add_parser("events", help="Print recent events as JSON.")
     events.add_argument("--follow", action="store_true", help="Stream new events as JSON lines.")
+    events.add_argument(
+        "--raw", action="store_true", help="Show incoming AutoDarts frames instead of game events."
+    )
     return root
 
 
@@ -115,10 +118,16 @@ def login(client, args) -> int:
     return 0
 
 
-def follow_events(url: str) -> None:
+def follow_events(url: str, raw: bool = False) -> None:
     parts = urlsplit(url)
     ws_url = urlunsplit(
-        ("wss" if parts.scheme == "https" else "ws", parts.netloc, "/events", "", "")
+        (
+            "wss" if parts.scheme == "https" else "ws",
+            parts.netloc,
+            "/events/raw" if raw else "/events",
+            "",
+            "",
+        )
     )
     with connect(ws_url, open_timeout=10, close_timeout=3, max_size=2**20, proxy=None) as ws:
         for raw in ws:
@@ -149,9 +158,9 @@ def execute(args, client) -> int:
         print_json(request(client, "POST", "/api/auth/logout"))
     elif args.command == "events":
         if args.follow:
-            follow_events(args.url)
+            follow_events(args.url, args.raw)
         else:
-            print_json(request(client, "GET", "/api/events"))
+            print_json(request(client, "GET", "/api/events/raw" if args.raw else "/api/events"))
     return 0
 
 
