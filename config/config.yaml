@@ -1,0 +1,14 @@
+# Non-empty environment variables / .env values override this file.
+# Non-empty client_id and board_id values lock updates through the API, CLI and UI.
+# Leave them empty to manage the connection through the CLI or UI.
+# Temporary development client; replace with OcheCore's registered ID before distribution.
+client_id: darts-caller
+board_id: ""
+
+api_base_url: https://api.autodarts.com
+host: 127.0.0.1
+port: 9180
+ui_enabled: true
+data_dir: ./data
+request_timeout: 10
+reconcile_interval: 30

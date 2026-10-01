@@ -1,0 +1,25 @@
+services:
+  ochecore:
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${OCHECORE_PUBLISH_HOST:-127.0.0.1}:${OCHECORE_PORT:-9180}:9180"
+    environment:
+      OCHECORE_HOST: 0.0.0.0
+      OCHECORE_PORT: 9180
+      OCHECORE_DATA_DIR: /data
+      OCHECORE_API_BASE_URL: ${OCHECORE_API_BASE_URL:-https://api.autodarts.com}
+      OCHECORE_CLIENT_ID: ${OCHECORE_CLIENT_ID:-}
+      OCHECORE_BOARD_ID: ${OCHECORE_BOARD_ID:-}
+      OCHECORE_UI_ENABLED: ${OCHECORE_UI_ENABLED:-}
+    volumes:
+      - ochecore-data:/data
+      - ./config:/app/config:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  ochecore-data:

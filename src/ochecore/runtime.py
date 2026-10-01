@@ -1,0 +1,73 @@
+import asyncio
+
+import httpx
+
+from ochecore.autodarts.auth import DeviceAuth
+from ochecore.autodarts.cloud import CloudConnection
+from ochecore.config import ConnectionConfig, Settings
+from ochecore.events import EventBus
+from ochecore.storage import write_private_json
+
+
+class Runtime:
+    def __init__(self, settings: Settings, http: httpx.AsyncClient):
+        self.settings = settings
+        self.http = http
+        self.bus = EventBus()
+        self.config = settings.connection()
+        self.tasks: list[asyncio.Task] = []
+        self.lock = asyncio.Lock()
+        self._create_connections()
+
+    def _create_connections(self) -> None:
+        self.auth = DeviceAuth(
+            self.http,
+            self.settings.api_base_url,
+            self.config.client_id,
+            self.settings.data_dir / "tokens.json",
+        )
+        self.cloud = CloudConnection(
+            self.http, self.auth, self.config.board_id, self.bus, self.settings.reconcile_interval
+        )
+
+    def start(self) -> None:
+        self.tasks = [
+            asyncio.create_task(self.cloud.run(), name="autodarts-cloud"),
+        ]
+
+    async def close(self) -> None:
+        for task in self.tasks:
+            task.cancel()
+        await asyncio.gather(*self.tasks, return_exceptions=True)
+        self.tasks.clear()
+        await self.auth.close()
+
+    async def configure(self, config: ConnectionConfig) -> None:
+        async with self.lock:
+            write_private_json(self.settings.data_dir / "connection.json", config.model_dump())
+            await self.close()
+            if config.client_id != self.config.client_id:
+                await self.auth.forget()
+            self.config = config
+            self._create_connections()
+            self.bus.history.clear()
+            self.start()
+
+    async def logout(self) -> None:
+        async with self.lock:
+            await self.close()
+            await self.auth.forget()
+            self.bus.history.clear()
+            self._create_connections()
+            self.start()
+
+    def status(self) -> dict:
+        return {
+            "auth": self.auth.status(),
+            "cloud": self.cloud.status(),
+            "events": {
+                "received": self.bus.sequence,
+                "subscribers": len(self.bus.queues),
+                "dropped_deliveries": self.bus.dropped,
+            },
+        }

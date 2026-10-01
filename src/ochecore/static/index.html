@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OcheCore</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><h1>OcheCore</h1><span id="live" role="status">Connecting…</span></header>
+    <div id="notice" role="status" hidden></div>
+    <section aria-labelledby="status-heading">
+      <h2 id="status-heading">Status</h2>
+      <dl>
+        <div><dt>Account</dt><dd id="auth-state">—</dd></div>
+        <div><dt>Cloud</dt><dd id="cloud-state">—</dd></div>
+        <div><dt>Active match</dt><dd id="match">—</dd></div>
+        <div><dt>Events received</dt><dd id="count">0</dd></div>
+      </dl>
+      <p id="connection-error" class="error" role="status"></p>
+    </section>
+    <section aria-labelledby="connection-heading">
+      <h2 id="connection-heading">Connection</h2>
+      <form id="configuration">
+        <label for="client_id">OAuth Client ID</label>
+        <input id="client_id" name="client_id" autocomplete="off" maxlength="200">
+        <label for="board_id">Board</label>
+        <select id="board_id" name="board_id"><option value="">No board selected</option></select>
+        <p class="hint" id="boards-status" role="status">Connect your account to load boards.</p>
+        <button type="button" id="refresh-boards" disabled>Refresh boards</button>
+        <p class="hint" id="managed"></p>
+        <button type="submit" id="save" disabled>Save settings</button>
+      </form>
+      <div class="actions">
+        <button id="login" type="button" disabled>Connect account</button>
+        <button id="logout" type="button" disabled>Disconnect</button>
+      </div>
+      <div id="device" hidden>
+        <p>Approve this code on AutoDarts:</p>
+        <strong id="user-code"></strong>
+        <a id="verification" target="_blank" rel="noreferrer">Open AutoDarts</a>
+        <p class="hint" id="expires"></p>
+      </div>
+    </section>
+    <details class="events">
+      <summary>Recent events</summary>
+      <p id="empty" class="hint">No events received.</p>
+      <div id="event-list"></div>
+    </details>
+  </main>
+</body>
+</html>

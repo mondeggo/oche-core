@@ -1,0 +1,43 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  --background: #f6f7f8;
+  --panel: #fff;
+  --text: #202830;
+  --muted: #58636d;
+  --border: #d5dbe0;
+  --accent: #175dc5;
+  --error: #a82925;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--background); color: var(--text); }
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { font-size: 24px; margin: 0 0 20px; }
+h2 { font-size: 17px; margin: 0 0 16px; }
+#live, .hint { font-size: 13px; color: var(--muted); }
+section, .events { border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: 20px; margin-bottom: 16px; }
+dl { margin: 0; }
+dl > div { display: flex; justify-content: space-between; gap: 20px; padding: 6px 0; }
+dt { color: var(--muted); flex-shrink: 0; }
+dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+label { display: block; font-size: 14px; margin: 16px 0 6px; }
+input, select { width: 100%; border: 1px solid var(--border); border-radius: 4px; padding: 10px; background: var(--panel); color: var(--text); font: inherit; }
+button { border: 1px solid var(--border); border-radius: 4px; padding: 9px 14px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:disabled, input:disabled, select:disabled { opacity: .6; cursor: default; }
+.actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+a { color: var(--accent); }
+#notice { margin-bottom: 16px; padding: 12px; border: 1px solid var(--border); border-radius: 4px; }
+.error { color: var(--error); }
+#connection-error:empty, #managed:empty { display: none; }
+#device { border-top: 1px solid var(--border); margin-top: 20px; }
+#user-code { display: block; font: 24px monospace; margin-bottom: 12px; }
+summary { cursor: pointer; }
+#event-list { max-height: 400px; overflow: auto; }
+#event-list details { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 12px; font-size: 13px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (prefers-color-scheme: dark) {
+  :root { --background: #15191d; --panel: #1d2329; --text: #e5e9ed; --muted: #adb7c1; --border: #3e4852; --accent: #86b7ff; --error: #ff9d95; }
+}
