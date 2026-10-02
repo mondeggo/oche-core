@@ -77,10 +77,8 @@ def redact(value: Any) -> Any:
 
 class EventBus:
     def __init__(self, capacity: int = 100):
-        self.history: deque[Event] = deque(maxlen=capacity)
         self.normalized_history: deque[Event] = deque(maxlen=capacity)
         self.raw_history: deque[Any] = deque(maxlen=capacity)
-        self.queues: set[asyncio.Queue[Event]] = set()
         self.normalized_queues: set[asyncio.Queue[Event]] = set()
         self.raw_queues: set[asyncio.Queue[Any]] = set()
         self.sequence = 0
@@ -114,8 +112,6 @@ class EventBus:
         envelope = Event(
             sequence=self.sequence, source=source, event=event, data=redact(data), **kwargs
         )
-        self.history.append(envelope)
-        self.dropped += self._deliver(envelope, self.queues)
         if envelope.kind == "normalized":
             self.normalized_history.append(envelope)
             self.dropped += self._deliver(envelope, self.normalized_queues)
@@ -123,12 +119,10 @@ class EventBus:
 
     @contextmanager
     def subscribe(
-        self, capacity: int = 100, mode: Literal["all", "normalized", "raw"] = "all"
+        self, capacity: int = 100, mode: Literal["normalized", "raw"] = "normalized"
     ) -> Iterator[asyncio.Queue]:
         queue: asyncio.Queue = asyncio.Queue(maxsize=capacity)
-        queues = {"all": self.queues, "normalized": self.normalized_queues, "raw": self.raw_queues}[
-            mode
-        ]
+        queues = {"normalized": self.normalized_queues, "raw": self.raw_queues}[mode]
         queues.add(queue)
         try:
             yield queue
@@ -136,7 +130,6 @@ class EventBus:
             queues.discard(queue)
 
     def clear(self) -> None:
-        self.history.clear()
         self.normalized_history.clear()
         self.raw_history.clear()
 

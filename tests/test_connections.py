@@ -142,7 +142,8 @@ async def test_cloud_bootstrap_match_switch_and_stale_events(tmp_path):
         cloud = CloudConnection(http, auth, BOARD_ID, bus)
         await cloud.reconcile(socket)
         assert cloud.match_id == MATCH_ID
-        assert bus.history[-1].snapshot
+        assert cloud.match.latest == {"id": MATCH_ID, "turns": []}
+        assert not bus.raw_history and not bus.normalized_history
         assert socket.sent[-1] == {
             "channel": "autodarts.matches",
             "topic": f"{MATCH_ID}.state",
@@ -304,12 +305,12 @@ async def test_websocket_reconnect_restores_all_subscriptions(tmp_path):
             bus = EventBus()
             cloud = CloudConnection(http, auth, BOARD_ID, bus)
             cloud.ws_url = f"ws://127.0.0.1:{port}/ms/v0/subscribe"
-            with bus.subscribe() as queue:
+            with bus.subscribe(mode="raw") as queue:
                 task = asyncio.create_task(cloud.run())
                 try:
                     await asyncio.wait_for(second_received.wait(), 8)
                     async with asyncio.timeout(2):
-                        while (await queue.get()).data.get("marker") != "after-reconnect":
+                        while (await queue.get())["data"].get("marker") != "after-reconnect":
                             pass
                     assert connections[0] == connections[1]
                     assert len(connections[1]) == 6
@@ -387,10 +388,15 @@ def test_bus_slow_subscriber_is_bounded_and_tokens_redacted():
     bus = EventBus(capacity=2)
     with bus.subscribe(capacity=1) as queue:
         for index in range(3):
-            bus.publish("cloud", "test", {"index": index, "nested": {"access_token": "secret"}})
+            bus.publish(
+                "core",
+                "test",
+                {"index": index, "nested": {"access_token": "secret"}},
+                kind="normalized",
+            )
         assert bus.dropped == 2
         event = queue.get_nowait()
         assert event.sequence == 3
         assert event.data["nested"]["access_token"] == "[redacted]"
-        assert len(bus.history) == 2
-    assert not bus.queues
+        assert len(bus.normalized_history) == 2
+    assert not bus.normalized_queues

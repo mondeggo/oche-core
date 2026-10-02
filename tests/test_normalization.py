@@ -23,9 +23,7 @@ def replay(frame):
         before = bus.sequence
         raw = bus.publish("cloud", event, deepcopy(data), snapshot=snapshot)
         normalizer.consume(raw)
-        return [
-            item for item in bus.history if item.sequence > before and item.kind == "normalized"
-        ]
+        return [item for item in bus.normalized_history if item.sequence > before]
 
     feed.normalizer = normalizer
     feed.bus = bus
