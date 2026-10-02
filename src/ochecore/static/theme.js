@@ -6,7 +6,7 @@
     theme = value === "light" ? "light" : "dark";
     document.documentElement.dataset.theme = theme;
     document.querySelector('meta[name="theme-color"]').content =
-      theme === "dark" ? "#18181b" : "#f5f6f3";
+      theme === "dark" ? "#1c1c21" : "#f5f4f1";
     const toggle = document.getElementById("theme-toggle");
     if (toggle) toggle.setAttribute("aria-checked", String(theme === "dark"));
   }

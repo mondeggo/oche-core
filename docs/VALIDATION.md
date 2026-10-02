@@ -1,26 +1,36 @@
 # Connection, event and WLED validation
 
-Updated October 2, 2026 after adding the Oche theme. Terminal controls and the optional
+Updated October 2, 2026 after refining theme contrast. Terminal controls and the optional
 UI share the same headless service.
 
 ## Dark and light themes
 
-The dark palette follows [Oche's stylesheet](https://github.com/mondeggo/oche/blob/main/app/static/css/style.css):
-charcoal surfaces, red accents and cream branding. Primary buttons use a slightly darker red
-for readable white labels. Light mode remains available through the sidebar switch; the
-preference is stored in the browser and applied before the stylesheet loads. The content
+Both palettes retain Oche's red and cream identity. Dark mode uses softer foregrounds,
+distinct primary/secondary text, less saturated accents and separate button/input borders.
+Light mode uses warm neutral surfaces with the same red identity. Disabled controls use
+explicit colours instead of fading the entire element, and the current navigation item has
+an accent marker. The [Oche handoff](oche-theme.css) maps the values to Oche's variable names.
+
+The preference is stored in the browser and applied before the stylesheet loads. The content
 column is centered beside the sidebar, and the switch remains available on narrow screens.
 
 Temporary jsdom checks passed default/saved themes, switching and reloads, blocked storage,
 cross-tab changes, switch accessibility attributes and text contrast in both palettes.
+The contrast refinement also checked hover/selected/notice text, placeholders, input borders
+and focus rings, plus agreement between the handoff file and the application palette.
+Main/secondary text against cards measures 11.40:1 / 5.93:1 in dark mode and 13.08:1 / 5.67:1
+in light mode. Primary button labels measure 5.36:1 and 6.30:1 respectively. The checked active
+text pairs exceed 4.5:1; input borders and focus indicators exceed 3:1 against their backgrounds.
 The existing UI and WLED DOM checks also passed. The 31 API/CLI tests, Ruff checks, Python
 formatting, JavaScript syntax, package builds and Compose configuration validation passed.
 The wheel includes the updated HTML, CSS and new `theme.js`, without new dependencies.
 
 The running native service still listens on `0.0.0.0:9180`. Health and all changed assets
 returned HTTP 200, and served assets matched the source files. Visual browser review remains
-pending because the browser tool found no available browsers. The Docker rebuild timed out
-again; the native service has the update, while container deployment remains pending.
+pending: the browser plugin exposed no browsers, and the Windows preview tool stopped because
+it could not verify the browser URL. No further browser automation was attempted. The Docker
+rebuild timed out again; the native service has the update, while container deployment remains
+pending.
 
 ## WLED discovery
 

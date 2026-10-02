@@ -168,9 +168,11 @@ session; it does not revoke other sessions on your account.
 
 Open `http://127.0.0.1:9180` when the service is running.
 
-The default dark theme follows [Oche's palette](https://github.com/mondeggo/oche).
+Both themes use [Oche's](https://github.com/mondeggo/oche) red and cream identity with neutral surfaces.
 Use **Dark theme** at the bottom of the sidebar to switch to light mode. The browser remembers
 your choice. Content is centered in the space beside the sidebar, with text left-aligned.
+The [Oche palette handoff](docs/oche-theme.css) contains matching dark/light CSS variables and
+component mapping notes for the Oche app. It is a reference file, not loaded by OcheCore.
 
 - **Overview** shows the selected board, account, cloud connection and game event count.
 - **AutoDarts** contains account login and board selection. OAuth settings and connection

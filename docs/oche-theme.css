@@ -1,0 +1,96 @@
+/*
+ * Oche palette handoff, matching OcheCore's dark and light themes.
+ * Copy these variables into Oche's stylesheet. Select the theme with
+ * <html data-theme="dark"> or <html data-theme="light">.
+ *
+ * Component changes needed in Oche:
+ * - Use --border for dividers/card borders; keep --header for raised fills.
+ * - Use --input / --control-border for editable fields.
+ * - Use --button / --button-border for neutral buttons, --accent for primary.
+ * - Replace filter: brightness(1.2) on button hover with explicit hover fills.
+ * - Use --brand for brand text; keep --cream / --on-cream for logo/CTA fills.
+ * - Use the explicit badge background/text pairs instead of translucent fills.
+ * - Replace hardcoded dark backgrounds/white text, including the html rule,
+ *   with semantic variables. Oche's terminal can retain its separate theme.
+ *
+ * This file supplies values; it is not loaded by OcheCore or a complete
+ * migration of every component in Oche.
+ */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1c1c21;
+  --card: #292930;
+  --header: #34343e;
+  --border: #44444f;
+  --fg: #e4e4e9;
+  --fg-dim: #a5a5b1;
+  --input: #222228;
+  --control-border: #777783;
+  --button: #32323a;
+  --button-border: #555561;
+  --hover: #393941;
+  --hover-border: #9696a3;
+  --accent: #b94149;
+  --accent-hover: #ac3941;
+  --on-accent: #fff;
+  --accent-marker: #d45d64;
+  --selected: #3e2e35;
+  --selected-text: #edc2c3;
+  --brand: #dbc4a5;
+  --link: #dbc4a5;
+  --cream: #dbc4a5;
+  --on-cream: #303038;
+  --focus: #c7ad8c;
+  --badge: #34343e;
+  --badge-text: #b7b7c3;
+  --success: #386f4d;
+  --success-bright: #9dc5a9;
+  --success-bg: #253b30;
+  --danger: #b94149;
+  --danger-bright: #e7a0a4;
+  --danger-bg: #432e35;
+  --warning: #d6bb83;
+  --warning-bg: #403724;
+  --disabled: #25252b;
+  --disabled-text: #92929e;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f4f1;
+  --card: #fff;
+  --header: #eae8e3;
+  --border: #dddbd7;
+  --fg: #303038;
+  --fg-dim: #666671;
+  --input: #fdfcf9;
+  --control-border: #8b8991;
+  --button: #f3f2ef;
+  --button-border: #cfcdc8;
+  --hover: #eae8e3;
+  --hover-border: #77757f;
+  --accent: #ac353d;
+  --accent-hover: #972e35;
+  --on-accent: #fff;
+  --accent-marker: #b43c43;
+  --selected: #f4e4e2;
+  --selected-text: #92353a;
+  --brand: #654e38;
+  --link: #973239;
+  --cream: #eee2ce;
+  --on-cream: #303038;
+  --focus: #973239;
+  --badge: #eae8e3;
+  --badge-text: #62616a;
+  --success: #2f6442;
+  --success-bright: #2f6442;
+  --success-bg: #e3eee6;
+  --danger: #a73840;
+  --danger-bright: #a73840;
+  --danger-bg: #f7e4e5;
+  --warning: #735820;
+  --warning-bg: #f4ead4;
+  --disabled: #eeece7;
+  --disabled-text: #777580;
+}
