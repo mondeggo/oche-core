@@ -1,7 +1,26 @@
 # Connection, event and WLED validation
 
-Updated October 2, 2026 after adding WLED discovery. Terminal controls and the optional
+Updated October 2, 2026 after adding the Oche theme. Terminal controls and the optional
 UI share the same headless service.
+
+## Dark and light themes
+
+The dark palette follows [Oche's stylesheet](https://github.com/mondeggo/oche/blob/main/app/static/css/style.css):
+charcoal surfaces, red accents and cream branding. Primary buttons use a slightly darker red
+for readable white labels. Light mode remains available through the sidebar switch; the
+preference is stored in the browser and applied before the stylesheet loads. The content
+column is centered beside the sidebar, and the switch remains available on narrow screens.
+
+Temporary jsdom checks passed default/saved themes, switching and reloads, blocked storage,
+cross-tab changes, switch accessibility attributes and text contrast in both palettes.
+The existing UI and WLED DOM checks also passed. The 31 API/CLI tests, Ruff checks, Python
+formatting, JavaScript syntax, package builds and Compose configuration validation passed.
+The wheel includes the updated HTML, CSS and new `theme.js`, without new dependencies.
+
+The running native service still listens on `0.0.0.0:9180`. Health and all changed assets
+returned HTTP 200, and served assets matched the source files. Visual browser review remains
+pending because the browser tool found no available browsers. The Docker rebuild timed out
+again; the native service has the update, while container deployment remains pending.
 
 ## WLED discovery
 

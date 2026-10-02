@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f5f6f3" />
+    <meta name="theme-color" content="#18181b" />
     <title>Overview · OcheCore</title>
+    <script src="/static/theme.js"></script>
     <link rel="stylesheet" href="/static/style.css" />
     <script src="/static/app.js" defer></script>
     <script src="/static/wled.js" defer></script>
@@ -28,9 +29,21 @@
           <span class="nav-note">Planned</span>
         </a>
       </nav>
-      <div class="service-status">
-        <span id="live" role="status">Connecting…</span>
-        <span>Local service</span>
+      <div class="sidebar-footer">
+        <div class="service-status">
+          <span id="live" role="status">Connecting…</span>
+          <span>Local service</span>
+        </div>
+        <button
+          id="theme-toggle"
+          class="theme-toggle"
+          type="button"
+          role="switch"
+          aria-checked="true"
+        >
+          <span>Dark theme</span>
+          <span class="theme-track" aria-hidden="true"><span class="theme-thumb"></span></span>
+        </button>
       </div>
     </aside>
     <main id="main" tabindex="-1">
