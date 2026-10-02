@@ -1,13 +1,38 @@
-# Connection and event validation
+# Connection, event and WLED validation
 
-Updated October 2, 2026 after simplifying the web interface and removing the unused combined
-event history and subscriber queue. Terminal controls and the optional UI share the same
-headless service.
+Updated October 2, 2026 after the first WLED implementation. Terminal controls and the optional
+UI share the same headless service.
+
+## First WLED implementation
+
+All **112 Python tests** passed. The 27 WLED cases cover configuration validation and persistence,
+overlapping targets, segment bounds, reserved effects, matrix rotation and wiring, priority
+and expiry, corrections, rejected device responses, independent workers, timed previews,
+shutdown/disable cleanup and headless API/CLI control. Phase tests include remote takeout,
+unknown readiness, malformed state, stale board status and reconnect baselines.
+
+Ruff, Python formatting, JavaScript syntax checks, wheel/source builds, sample configuration
+validation and `docker compose config --quiet` passed. The wheel includes `wled.py` and
+`static/wled.js`; no runtime dependencies were added.
+
+Temporary jsdom checks with mocked API responses passed WLED device/target editing, probes,
+phase and matrix previews (including zero), saved/unsaved forms, device navigation, disabled
+controls and offline recovery. Existing UI regression checks also passed. These verify DOM
+behaviour; visual verification is pending because the browser tool has no available browsers.
+
+No real WLED controller was configured or contacted. Verify the selected segments and matrix
+orientation on the installed hardware, then check live ready/takeout/wait transitions and
+corrections during a match. The recognised readiness strings come from supplied references;
+their presence in the current AutoDarts v2 cloud stream has not been established.
+
+Docker deployment remains pending. Both the engine probe and Compose build timed out, following
+the earlier Docker Desktop startup failure described below. Rebuild with
+`docker compose up --build -d --wait --wait-timeout 60` once the engine is working.
 
 ## Interface refresh
 
-The sidebar separates Overview, Events and Integrations, with AutoDarts settings and clearly
-marked planned WLED/Caller pages. Advanced connection settings and JSON payloads use
+The sidebar separates Overview, Events and Integrations, with AutoDarts settings, WLED controls
+and a clearly marked planned Caller page. Advanced connection settings and JSON payloads use
 expandable details. The layout adapts to narrow screens, and navigation provides keyboard
 focus, current-page labels and a skip link.
 
@@ -34,7 +59,7 @@ the uv settings resolve to that address, and Compose resolves the development pu
 `0.0.0.0:9180`. The 15 configuration/CLI tests and Ruff passed, and the Bash launcher passed
 syntax validation. Docker deployment remains pending because the engine is unavailable.
 
-**85 tests passed**, covering OAuth approval/errors, polling slowdown, concurrent refresh,
+The original **85 tests** cover OAuth approval/errors, polling slowdown, concurrent refresh,
 token rotation/storage, expired or corrupt sessions, cloud bootstrap, match changes, stale
 events, HTTP 401 retry, local WebSocket test-server reconnection, bounded
 dispatch, API configuration, origin checks and WebSocket cleanup.

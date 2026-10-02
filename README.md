@@ -5,8 +5,9 @@ Headless AutoDarts event gateway built with Python, uv and Docker.
 OAuth device login, board discovery, automatic reconnection and normalized game events,
 with separate raw AutoDarts streams. A small optional web interface uses the same API as the CLI.
 The service owns authentication, persistence and event processing and keeps running when
-either client closes. It starts without a configured board. Audio, WLED, MQTT, Home Assistant
-are planned for later phases. X01 event interpretation is implemented and tested against
+either client closes. It starts without a configured board. WLED supports phase lighting,
+temporary game effects and numeric matrix scores. Audio, MQTT and Home Assistant are planned
+for later phases. X01 event interpretation is implemented and tested against
 the supplied reference contracts; full live gameplay acceptance remains to be done.
 
 - [Project plan](docs/PLAN.md)
@@ -28,6 +29,7 @@ OcheCore/
 │       ├── runtime.py       # connection lifecycle
 │       ├── storage.py       # atomic persistence
 │       ├── events.py        # parsing, game event normalization and bounded dispatch
+│       ├── wled.py          # controllers, lighting targets, effects and matrix rendering
 │       ├── autodarts/
 │       │   ├── auth.py
 │       │   ├── cloud.py     # cloud connection and match tracking
@@ -119,7 +121,7 @@ docker compose logs -f
 The same interface is available at <http://127.0.0.1:9180>. The container runs as a non-root
 user, stores persistent data in the project's `./data` folder and mounts `config/` read-only.
 AutoDarts Detection runs separately on the board computer; OcheCore does not access cameras.
-The `./data:/data` bind mount contains saved connection settings and OAuth tokens. It is
+The `./data:/data` bind mount contains saved connection/WLED settings and OAuth tokens. It is
 excluded from Git and Docker build context. Back up this folder to preserve the login.
 On Linux, create it before startup and give container UID/GID 10001 write access:
 `mkdir -p data && sudo chown 10001:10001 data && chmod 700 data`.
@@ -171,12 +173,80 @@ Open `http://127.0.0.1:9180` when the service is running.
   diagnostics are under expandable details.
 - **Events** switches between normalized game events and raw AutoDarts frames. Open an entry
   to inspect its JSON payload; the view updates automatically.
-- **Integrations** lists AutoDarts and the planned WLED and Caller integrations. Lighting and
-  audio controls will appear when those integrations are implemented.
+- **Integrations** links to AutoDarts and WLED. Caller is marked as planned.
+- **WLED** manages controllers, lighting targets, phase colours, game effects and matrix
+  scores. Saved targets have a timed test button; settings remain active when the page closes.
 
 The interface uses plain HTML, CSS and JavaScript in `src/ochecore/static/`, without a frontend
 build step. Navigation stays in the browser; all controls use the same API as the terminal.
 Settings and login data are saved as JSON in `data/`; there is no database.
+
+## WLED lighting and matrix scores
+
+Open **WLED**, add a controller with its HTTP address, save it and select **Check connection**.
+This loads its existing segments and available effects. Add a lighting target, choose its
+segment and mode, then enable WLED and save. **Test for 3 seconds** previews the target without
+a match and returns to the current game phase afterward.
+
+- **Whole segment**: independent colour, brightness and native WLED effect for each phase.
+- **LED range / individual LED**: choose a starting pixel and count; count `1` selects one LED.
+- **Matrix score**: choose remaining score, visit total or last dart. Set dimensions, rotation
+  and row wiring. Corrections and silent reconnection snapshots update the displayed score.
+
+Defaults are green for confirmed ready, yellow for takeout, red for waiting and dim white
+when idle. Each target has optional triple, bull, 180, bust, leg-win and match-win effects.
+Match win has highest priority, followed by leg win, bust, 180, bull and triple. Corrections
+cancel temporary effects. Only local players trigger effects; snapshots never celebrate.
+
+The core requires an online board, a healthy cloud connection and an explicit `Ready` or
+`Ready for throw` status to show green. A score update alone does not establish readiness.
+Unknown readiness shows red with a reason on the WLED page and `ochecore game`. These status
+names come from the supplied references; they still need checking against live AutoDarts v2
+gameplay. Connection loss clears scores and requests the waiting appearance on reachable lights.
+
+### Terminal setup
+
+Edit a copy of [the example configuration](config/wled.example.json) with your controller
+address and existing segment IDs. It assumes a surround on segment `0` and a 16×8 matrix on
+segment `1`; remove the matrix target if you do not have one. Keep the service running, then:
+
+```powershell
+uv run ochecore wled config --file config/wled.example.json
+uv run ochecore wled probe board
+uv run ochecore wled enable
+uv run ochecore wled test board --target ring --phase takeout
+uv run ochecore wled test board --target score --value 180
+uv run ochecore wled status
+uv run ochecore game
+uv run ochecore wled disable board
+```
+
+`wled enable` / `disable` without a device ID controls the whole integration. To edit settings,
+save the output of `ochecore wled config` to a JSON file and reload it with `--file`. Settings
+are validated and saved atomically in `data/wled.json`; no restart is required. Per-target
+`enabled`, phase appearances and event effects use the same configuration through API and UI.
+An empty `effects` object disables temporary effects for a target. Use identical phase colours
+and no effects for steady illumination. Standard Docker commands use
+`docker compose exec ochecore ochecore wled ...`.
+
+### First-version limits
+
+Configure LED geometry and turn on master power in WLED first; master brightness must be above
+zero. Assign dedicated, non-overlapping segments to OcheCore. Individual pixel control freezes
+the native effect for its entire segment and sets segment brightness to full, scaling colours
+per target. Other pixels in that segment therefore share those settings. Untargeted segments
+are left alone. Saved appearances belong to OcheCore; applying native whole-device WLED presets
+is not included in this version.
+
+The matrix renderer expects a linear segment with consecutive pixels in rows, up to 512 pixels
+per matrix and 1024 individually controlled pixels per controller. Test orientation with a
+sample score; WLED grouping, custom maps and 2D segment layouts require hardware verification.
+Unknown or oversized numbers show dashes. Player names and scrolling messages are planned.
+
+Each controller has its own bounded event queue and timeout. Offline controllers retry without
+blocking AutoDarts or other lights; old effects are discarded. Disabling or reconfiguring makes
+a best-effort request for the waiting appearance and clears matrix scores before stopping.
+It does not restore a previous WLED preset. A disconnected controller cannot receive that reset.
 
 ## Configuration
 
@@ -209,6 +279,11 @@ save. Old YAML/environment options for that adapter are also ignored. See the
 | `GET /healthz` | Process liveness, even before configuration |
 | `GET /readyz` | 200 if the cloud stream is connected, otherwise 503 |
 | `GET /api/status` | Connection states and counters without secrets |
+| `GET /api/game` | Current phase, reason, player and display scores |
+| `GET /api/wled`, `PUT /api/wled` | Saved WLED controllers and target configuration |
+| `GET /api/wled/status` | Device connectivity, errors, capabilities and current phase |
+| `POST /api/wled/{device_id}/probe` | Check controller capabilities; body `{}` |
+| `POST /api/wled/{device_id}/test` | Timed preview: `target_id`, `phase`, optional `value`, `duration` |
 | `GET /api/config`, `PUT /api/config` | Public connection settings |
 | `GET /api/boards` | Account boards and current selection; requires login |
 | `POST /api/auth/login` | Start device authorization |

@@ -7,6 +7,7 @@
     <title>Overview · OcheCore</title>
     <link rel="stylesheet" href="/static/style.css" />
     <script src="/static/app.js" defer></script>
+    <script src="/static/wled.js" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -21,10 +22,7 @@
         <p class="nav-label">Integrations</p>
         <a href="#integrations" data-page="integrations">All integrations</a>
         <a href="#autodarts" data-page="autodarts">AutoDarts</a>
-        <a href="#wled" data-page="wled">
-          WLED
-          <span class="nav-note">Planned</span>
-        </a>
+        <a href="#wled" data-page="wled">WLED</a>
         <a href="#caller" data-page="caller">
           Caller
           <span class="nav-note">Planned</span>
@@ -106,9 +104,9 @@
           <a class="integration-row" href="#wled">
             <div>
               <h2>WLED</h2>
-              <p class="muted">Lighting effects for your game.</p>
+              <p class="muted">Phase colours, game effects and matrix scores.</p>
             </div>
-            <span class="badge">Planned</span>
+            <span class="badge">Available</span>
             <span aria-hidden="true">→</span>
           </a>
           <a class="integration-row" href="#caller">
@@ -183,6 +181,183 @@
           </dl>
           <p id="connection-error" class="hint">No connection errors reported.</p>
         </details>
+      </section>
+
+      <section data-view="wled" aria-label="WLED settings" hidden>
+        <div class="panel">
+          <div class="panel-heading">
+            <h2>Current phase</h2>
+            <span id="wled-phase" class="badge">Waiting</span>
+          </div>
+          <p id="wled-reason" class="muted">Loading service state…</p>
+          <div id="wled-device-status" class="hint" role="status"></div>
+          <p id="wled-error" class="error" role="status" hidden></p>
+        </div>
+        <form id="wled-form" class="panel">
+          <div class="panel-heading">
+            <h2>Devices and lighting</h2>
+            <label class="check-label">
+              <input type="checkbox" id="wled-enabled" />
+              Enable WLED
+            </label>
+          </div>
+          <p class="hint">
+            Save settings to apply them. Lights keep working when this page is closed.
+          </p>
+          <label for="wled-device">Device</label>
+          <div class="field-row">
+            <select id="wled-device">
+              <option value="">No devices configured</option>
+            </select>
+            <button id="wled-add-device" type="button">Add device</button>
+          </div>
+          <div id="wled-device-editor" hidden>
+            <div class="wled-grid">
+              <label>
+                Name
+                <input id="wled-name" maxlength="80" required />
+              </label>
+              <label>
+                WLED address
+                <input id="wled-url" type="url" placeholder="http://wled.local" required />
+              </label>
+            </div>
+            <div class="actions">
+              <label class="check-label">
+                <input id="wled-device-enabled" type="checkbox" />
+                Enable device
+              </label>
+              <button id="wled-probe" type="button">Check connection</button>
+              <button id="wled-remove-device" type="button">Remove device</button>
+            </div>
+            <p id="wled-capabilities" class="hint"></p>
+            <div class="panel-heading wled-target-heading">
+              <h2>Lighting targets</h2>
+              <button id="wled-add-target" type="button">Add target</button>
+            </div>
+            <p class="hint">
+              Choose segments already configured in WLED. Pixel indices start at zero within a
+              segment. Pixel control freezes that segment’s native effect.
+            </p>
+            <div id="wled-targets"></div>
+          </div>
+          <div class="actions">
+            <button id="wled-save" class="primary" type="submit" disabled>Save settings</button>
+            <button id="wled-reload" type="button">Reload saved settings</button>
+            <span id="wled-unsaved" class="hint" hidden>Unsaved changes</span>
+          </div>
+        </form>
+        <template id="wled-target-template">
+          <details class="wled-target" open>
+            <summary data-title>Lighting target</summary>
+            <div class="wled-grid">
+              <label>
+                Name
+                <input data-field="name" maxlength="80" required />
+              </label>
+              <label>
+                Mode
+                <select data-field="mode">
+                  <option value="segment">Whole segment</option>
+                  <option value="pixels">LED range / individual LED</option>
+                  <option value="matrix">Matrix score</option>
+                </select>
+              </label>
+              <label>
+                Segment ID
+                <input data-field="segment" type="number" min="0" max="255" required />
+              </label>
+              <label class="check-label">
+                <input data-field="enabled" type="checkbox" />
+                Enable target
+              </label>
+            </div>
+            <div data-pixels class="wled-grid" hidden>
+              <label>
+                First LED
+                <input data-field="start" type="number" min="0" max="65535" required />
+              </label>
+              <label data-count>
+                LED count
+                <input data-field="count" type="number" min="1" max="1024" required />
+              </label>
+            </div>
+            <div data-matrix hidden>
+              <div class="wled-grid">
+                <label>
+                  Display
+                  <select data-matrix-field="source">
+                    <option value="remaining">Remaining score</option>
+                    <option value="turn_score">Visit total</option>
+                    <option value="last_dart">Last dart</option>
+                  </select>
+                </label>
+                <label>
+                  Rotation
+                  <select data-matrix-field="rotation">
+                    <option value="0">0°</option>
+                    <option value="90">90°</option>
+                    <option value="180">180°</option>
+                    <option value="270">270°</option>
+                  </select>
+                </label>
+                <label>
+                  Width
+                  <input data-matrix-field="width" type="number" min="5" max="64" required />
+                </label>
+                <label>
+                  Height
+                  <input data-matrix-field="height" type="number" min="5" max="64" required />
+                </label>
+                <label>
+                  Text colour
+                  <input data-matrix-field="color" type="color" />
+                </label>
+                <label>
+                  Brightness
+                  <input data-matrix-field="brightness" type="number" min="0" max="255" required />
+                </label>
+                <label class="check-label">
+                  <input data-matrix-field="serpentine" type="checkbox" />
+                  Serpentine rows
+                </label>
+              </div>
+              <p class="hint">
+                Numeric display, up to 512 pixels. Unknown or oversized scores show dashes. Keep the
+                WLED master power on and brightness above zero.
+              </p>
+            </div>
+            <details data-phases class="advanced" open>
+              <summary>Phase colours</summary>
+              <div data-phase-rows></div>
+            </details>
+            <details class="advanced">
+              <summary>Game effects</summary>
+              <p class="hint">
+                Local players only. A win takes priority; the current phase returns when the effect
+                ends.
+              </p>
+              <div data-effect-rows></div>
+            </details>
+            <div class="actions">
+              <label>
+                Test phase
+                <select data-test-phase>
+                  <option value="ready">Ready / green</option>
+                  <option value="takeout">Takeout / yellow</option>
+                  <option value="waiting">Wait / red</option>
+                  <option value="idle">Idle</option>
+                </select>
+              </label>
+              <label data-test-score hidden>
+                Test score
+                <input data-test-value type="number" min="0" max="9999" value="180" />
+              </label>
+              <button data-test type="button">Test for 3 seconds</button>
+              <button data-remove type="button">Remove target</button>
+            </div>
+          </details>
+        </template>
       </section>
 
       <section data-view="planned" aria-label="Planned integration" hidden>

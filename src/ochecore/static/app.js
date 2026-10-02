@@ -46,7 +46,11 @@ async function api(path, method = "GET", body) {
   const data = await response.json();
   if (!response.ok) {
     throw new Error(
-      typeof data.detail === "string" ? data.detail : "Check the connection settings.",
+      typeof data.detail === "string"
+        ? data.detail
+        : Array.isArray(data.detail)
+          ? data.detail.map((item) => `${item.loc.slice(1).join(" / ")}: ${item.msg}`).join("; ")
+          : "Check the settings.",
     );
   }
   return data;
@@ -57,7 +61,7 @@ function navigate(focus = false) {
   if (requested === "main") return;
   page = Object.hasOwn(pages, requested) ? requested : "overview";
   const [title, description] = pages[page];
-  const planned = page === "wled" || page === "caller";
+  const planned = page === "caller";
   document.querySelectorAll("[data-view]").forEach((view) => {
     view.hidden = view.dataset.view !== (planned ? "planned" : page);
   });

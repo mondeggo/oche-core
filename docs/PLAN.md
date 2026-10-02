@@ -32,7 +32,7 @@ without placeholder source files.
 Implemented:
 
 - [x] Python package, uv lockfile, validated YAML/environment/API settings.
-- [x] Non-root Docker image, persistent volume and healthcheck.
+- [x] Non-root Docker image, persistent data bind mount and healthcheck.
 - [x] Terminal commands: serve, login, logout, config, status and events.
 - [x] Account board discovery through `GET /api/boards`, `ochecore boards` and a simple UI selector.
 - [x] Optional minimal UI for connection settings, status and recent events.
@@ -75,6 +75,22 @@ Acceptance: one normalized event per throw in covered scenarios, no extra throw 
 and correct local/remote player attribution.
 
 ## Phase 3 — Rules, WLED and caller
+
+First WLED implementation:
+
+- [x] Persisted controller/target settings, CLI/API controls and optional WLED UI.
+- [x] Independent controller workers, bounded queues, timeouts and reconnect handling.
+- [x] Segment colours/native effects and individual LED/range colours.
+- [x] Current game API, readiness reasons, configurable phase colours and timed previews.
+- [x] Local triple, bull, 180, bust and win effects with priority and cancellation.
+- [x] Numeric matrix scores, orientation/serpentine layout, correction and snapshot updates.
+- [x] Mocked device, headless API and UI form validation.
+- [ ] Live phase/readiness and physical matrix acceptance with the installed hardware.
+- [ ] Native whole-device preset actions, matrix player names and scrolling messages.
+- [ ] Caller integration and shared profiles/rules if needed across integrations.
+
+The implemented settings are documented in the [README](../README.md#wled-lighting-and-matrix-scores).
+The broader scope and remaining delivery goals follow.
 
 1. Independent bounded integration queues, timeouts and failure isolation.
 2. Validated rules: target, phase/event, filters and actions. Persist integration settings under
@@ -181,8 +197,8 @@ publish a documented schema.
 
 Live development checks use the configured `darts-caller` Client ID. Authentication with an
 OAuth Client ID assigned to OcheCore still needs verification before distribution.
-Upstream payloads may change. No caller, WLED effect, rule engine or durable event log is active
-in phase 1. A healthy process does not imply a connected board.
+Upstream payloads may change. Caller, shared profiles and a durable event log remain planned.
+A healthy process does not imply a connected board or controller.
 
 All maintained project content uses English. Preserve the source brief and third-party references.
 See [API research](AUTODARTS_API.md) and [validation notes](VALIDATION.md).

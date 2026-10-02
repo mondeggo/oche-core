@@ -556,3 +556,80 @@ pre {
     flex-wrap: wrap;
   }
 }
+
+/* WLED editor */
+.wled-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+.check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+}
+input[type="checkbox"] {
+  width: 17px;
+  min-height: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+input[type="color"] {
+  width: 100%;
+  padding: 4px;
+  min-width: 48px;
+}
+.wled-target-heading {
+  margin-top: 32px;
+}
+.wled-target {
+  margin-top: 22px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.wled-target > summary {
+  font-size: 15px;
+}
+.wled-appearance {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.5fr) repeat(4, minmax(70px, 1fr));
+  gap: 10px;
+  align-items: center;
+  padding-top: 8px;
+}
+.wled-appearance label {
+  margin: 0;
+  font-size: 12px;
+}
+.wled-appearance > span {
+  font-size: 13px;
+}
+.wled-appearance input,
+.wled-appearance select {
+  margin-top: 4px;
+}
+#wled-device-status:empty {
+  display: none;
+}
+@media (max-width: 1000px) {
+  .wled-appearance {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .wled-appearance > span,
+  .wled-appearance > label:first-child {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 480px) {
+  .wled-grid {
+    grid-template-columns: 1fr;
+  }
+  .wled-target {
+    padding: 14px;
+  }
+}
