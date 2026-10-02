@@ -29,6 +29,11 @@ The deployment checks below describe the earlier successful event/API release.
 
 ## Automated checks
 
+Development binding was checked after changing the startup configuration to `0.0.0.0`:
+the uv settings resolve to that address, and Compose resolves the development publication to
+`0.0.0.0:9180`. The 15 configuration/CLI tests and Ruff passed, and the Bash launcher passed
+syntax validation. Docker deployment remains pending because the engine is unavailable.
+
 **85 tests passed**, covering OAuth approval/errors, polling slowdown, concurrent refresh,
 token rotation/storage, expired or corrupt sessions, cloud bootstrap, match changes, stale
 events, HTTP 401 retry, local WebSocket test-server reconnection, bounded

@@ -56,6 +56,9 @@ uv run ochecore serve --no-ui
 ```
 
 This starts the API and event stream at <http://127.0.0.1:9180> with web pages disabled.
+The checked-in configuration listens on `0.0.0.0`, so other devices on your network can use
+`http://YOUR_LAN_IP:9180` as well. `0.0.0.0` is the listening address; use the computer's actual
+IP address in a browser.
 Use `uv run ochecore serve` to respect `ui_enabled` in the configuration (enabled by default).
 Running `uv run ochecore` also starts the service. Run commands from the project root. uv manages `.venv`;
 `.python-version` selects Python 3.13, and the package supports Python 3.12 or newer.
@@ -224,12 +227,19 @@ REST snapshots establish a silent baseline. Corrections and removals have distin
 and repeated states do not reannounce darts or wins. See [event rules](docs/EVENTS.md) for
 the supported payload contract and deduplication limits.
 
-The interface is for trusted local use and binds to `127.0.0.1`. For a trusted LAN, set
-`OCHECORE_HOST=0.0.0.0` with uv or `OCHECORE_PUBLISH_HOST=0.0.0.0` with Docker.
+The interface is for trusted local networks. `OCHECORE_HOST` controls the uv listening address;
+`OCHECORE_PUBLISH_HOST` controls Docker's host binding. Standard Docker startup publishes on
+`127.0.0.1`; development startup listens on all interfaces as described below.
 Anyone who can access it can read events and edit settings. Remote access requires an
 authenticated reverse proxy and TLS; do not publish port 9180 directly to the Internet.
 
 ## Development
+
+Use `uv run ochecore serve` with the checked-in configuration, or run `scripts\dev.bat` on
+Windows / `bash scripts/dev.sh` on Linux and macOS for Docker development with live logs.
+The Docker development scripts set `OCHECORE_PUBLISH_HOST=0.0.0.0` before starting Compose,
+overriding the `.env` value. An explicit shell environment value takes precedence.
+Open `http://YOUR_LAN_IP:9180` from another device, using your configured port if different.
 
 ```powershell
 uv run pytest

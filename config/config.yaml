@@ -6,7 +6,8 @@ client_id: darts-caller
 board_id: ""
 
 api_base_url: https://api.autodarts.com
-host: 127.0.0.1
+# Listen on all interfaces for development access from the local network.
+host: 0.0.0.0
 port: 9180
 ui_enabled: true
 data_dir: ./data
