@@ -68,7 +68,15 @@ def parser() -> argparse.ArgumentParser:
     login.add_argument("--json", action="store_true", help="Print login details as JSON.")
     commands.add_parser("logout", help="Remove the service's saved AutoDarts session.")
     events = commands.add_parser("events", help="Print recent events as JSON.")
-    events.add_argument("--follow", action="store_true", help="Stream new events as JSON lines.")
+    event_mode = events.add_mutually_exclusive_group()
+    event_mode.add_argument(
+        "--follow", action="store_true", help="Stream new events as JSON lines."
+    )
+    event_mode.add_argument(
+        "--debug",
+        choices=["on", "off", "status"],
+        help="Control raw-event recording to a JSONL file on the service.",
+    )
     events.add_argument(
         "--raw", action="store_true", help="Show incoming AutoDarts frames instead of game events."
     )
@@ -201,7 +209,16 @@ def execute(args, client) -> int:
     elif args.command == "logout":
         print_json(request(client, "POST", "/api/auth/logout"))
     elif args.command == "events":
-        if args.follow:
+        if args.debug:
+            print_json(
+                request(
+                    client,
+                    "GET" if args.debug == "status" else "PUT",
+                    "/api/events/debug",
+                    {"enabled": args.debug == "on"},
+                )
+            )
+        elif args.follow:
             follow_events(args.url, args.raw)
         else:
             print_json(request(client, "GET", "/api/events/raw" if args.raw else "/api/events"))

@@ -85,6 +85,8 @@ uv run ochecore events
 uv run ochecore events --follow
 uv run ochecore events --raw
 uv run ochecore events --raw --follow
+uv run ochecore events --debug on
+uv run ochecore events --debug off
 uv run ochecore logout
 ```
 
@@ -108,6 +110,11 @@ Commands return nonzero on failure and 130 on interruption.
 frames with their original JSON structure. Both streams have independent histories and
 subscriber queues. Raw frames include duplicates and control messages; REST snapshots are
 not inserted into the raw stream. Known credential fields are redacted.
+
+Each history keeps 100 entries in memory. `events --debug on` records future raw frames to
+`data/debug/*.jsonl` until `events --debug off` or service shutdown. Use `events --debug status`
+to see the file path, counts and errors. The Events page has the same switch and a download
+link for the stopped capture. See [debug recording](docs/EVENTS.md#debug-recording).
 
 The default control address is `http://127.0.0.1:9180`. Override it with the `OCHECORE_URL`
 environment variable or a flag before the command:
@@ -191,6 +198,7 @@ component mapping notes for the Oche app. It is a reference file, not loaded by 
 - **WLED** manages controllers, lighting targets, phase colours, game effects and matrix
   scores. Saved targets have a timed test button; settings remain active when the page closes.
 - **Caller** selects and installs voices, chooses host/browser output and tests announcements.
+  Saving a voice downloads only that pack and removes the old cache once it is ready.
   See the [caller guide](docs/CALLER.md) for terminal controls and game-mode behavior.
 
 The interface uses plain HTML, CSS and JavaScript in `src/ochecore/static/`, without a frontend

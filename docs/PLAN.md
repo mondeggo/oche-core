@@ -201,7 +201,8 @@ publish a documented schema.
 ## Phase 5 — Rule editor and operations
 
 1. API and CLI rule editing, action previews and integration status, with a simple optional UI.
-2. Optional anonymized capture and deterministic replay for diagnostics.
+2. Raw debug capture is implemented in the Events page and CLI. Add anonymization and a
+   dedicated replay command if needed; current captures redact known credential fields.
 3. Configuration migrations, export/backup and retention policy.
 4. Interface authentication before shared or remote use.
 5. Test amd64/arm64 images, verify Raspberry Pi operation and document updates.

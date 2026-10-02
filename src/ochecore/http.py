@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from ochecore import __version__
 from ochecore.caller import CallerConfig, CallerTest
 from ochecore.config import ConnectionConfig
-from ochecore.events import Event
+from ochecore.events import DebugRecording, Event
 from ochecore.wled import Preview, WLEDConfig
 
 
@@ -192,5 +192,20 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
     @router.get("/api/events/raw")
     async def raw_events(request: Request):
         return list(request.app.state.runtime.bus.raw_history)
+
+    @router.get("/api/events/debug")
+    async def debug_status(request: Request):
+        return request.app.state.runtime.debug.status()
+
+    @router.put("/api/events/debug")
+    async def debug_recording(config: DebugRecording, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            return await runtime.debug.configure(config.enabled)
+
+    @router.get("/api/events/debug/file")
+    async def debug_file(request: Request):
+        path = request.app.state.runtime.debug.download_path()
+        return FileResponse(path, media_type="application/x-ndjson", filename=path.name)
 
     return router

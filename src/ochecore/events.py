@@ -1,13 +1,18 @@
 import asyncio
 import json
+import os
+import re
 from collections import OrderedDict, deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, ValidationError
+
+from ochecore.autodarts.errors import ConnectionProblem
 
 
 class Event(BaseModel):
@@ -75,8 +80,143 @@ def redact(value: Any) -> Any:
     return value
 
 
+class DebugRecording(BaseModel):
+    enabled: bool
+
+
+class RawEventRecorder:
+    """Opt-in JSONL capture independent of the bounded event history and subscribers."""
+
+    def __init__(self, directory: Path):
+        self.directory = directory
+        self.enabled = False
+        self.path: Path | None = None
+        self.recorded: int | None = 0
+        self.bytes = 0
+        self.pending_bytes = 0
+        self.error: str | None = None
+        self.queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=512)
+        self.task: asyncio.Task | None = None
+        try:
+            files = sorted(directory.glob("autodarts-*.jsonl"))
+            if files:
+                self.path = files[-1]
+                self.bytes = self.path.stat().st_size
+                self.recorded = None  # Do not scan old captures just to count their lines.
+        except OSError:
+            self.error = "Cannot read the debug directory. Check its permissions."
+
+    def status(self) -> dict:
+        writing = self.task is not None and not self.task.done()
+        return {
+            "enabled": self.enabled,
+            "file": self.path.name if self.path else None,
+            "path": str(self.path.resolve()) if self.path else None,
+            "recorded": self.recorded,
+            "bytes": self.bytes,
+            "error": self.error,
+            "pending": self.queue.qsize(),
+            "download_url": "/api/events/debug/file"
+            if self.path and not self.enabled and not writing
+            else None,
+        }
+
+    async def configure(self, enabled: bool) -> dict:
+        if enabled and not self.enabled:
+            await self.stop()
+            timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+            path = self.directory / f"autodarts-{timestamp}-{uuid4().hex[:8]}.jsonl"
+            try:
+                self.directory.mkdir(parents=True, exist_ok=True)
+                # Exclusive creation and owner-only permissions on POSIX.
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                os.close(fd)
+            except OSError as exc:
+                self.error = "Cannot create a debug file. Check free disk space and permissions."
+                raise ConnectionProblem(self.error) from exc
+            self.path = path
+            self.recorded, self.bytes, self.pending_bytes = 0, 0, 0
+            self.error = None
+            self.enabled = True
+            self.task = asyncio.create_task(self._write(), name="raw-event-recording")
+        elif not enabled:
+            await self.stop()
+        return self.status()
+
+    def record(self, value: Any, sequence: int) -> None:
+        if not self.enabled:
+            return
+        entry = {
+            "schema_version": 1,
+            "sequence": sequence,
+            "received_at": datetime.now(UTC).isoformat(),
+            "raw": value,
+        }
+        line = (json.dumps(entry, ensure_ascii=True, separators=(",", ":")) + "\n").encode()
+        if self.queue.full() or self.pending_bytes + len(line) > 8 * 1024 * 1024:
+            self.enabled = False
+            self.error = (
+                "Recording stopped: disk writing could not keep up. This capture is incomplete."
+            )
+            if not self.queue.full():
+                self.queue.put_nowait(None)
+            return
+        self.pending_bytes += len(line)
+        self.queue.put_nowait(line)
+
+    def _append(self, batch: list[bytes]) -> None:
+        with self.path.open("ab") as stream:
+            stream.writelines(batch)
+
+    async def _write(self) -> None:
+        try:
+            while self.enabled or not self.queue.empty():
+                first = await self.queue.get()
+                batch = [first] if first is not None else []
+                while len(batch) < 100 and not self.queue.empty():
+                    item = self.queue.get_nowait()
+                    if item is not None:
+                        batch.append(item)
+                if batch:
+                    await asyncio.to_thread(self._append, batch)
+                    size = sum(map(len, batch))
+                    self.pending_bytes -= size
+                    self.bytes += size
+                    self.recorded += len(batch)
+        except OSError:
+            self.enabled = False
+            self.error = (
+                "Recording stopped: cannot write the debug file. This capture is incomplete."
+            )
+        finally:
+            while not self.queue.empty():
+                self.queue.get_nowait()
+            self.pending_bytes = 0
+
+    async def stop(self) -> None:
+        self.enabled = False
+        if self.task and not self.task.done():
+            if not self.queue.full():
+                self.queue.put_nowait(None)
+            await self.task
+
+    def download_path(self) -> Path:
+        if self.enabled or (self.task and not self.task.done()):
+            raise ConnectionProblem("Stop recording before downloading the debug file.")
+        path = self.path
+        if (
+            path is None
+            or not re.fullmatch(r"autodarts-\d{8}T\d{12}Z-[a-f0-9]{8}\.jsonl", path.name)
+            or path.resolve().parent != self.directory.resolve()
+            or not path.is_file()
+        ):
+            raise ConnectionProblem("No debug file is available.")
+        return path
+
+
 class EventBus:
-    def __init__(self, capacity: int = 100):
+    def __init__(self, capacity: int = 100, recorder: RawEventRecorder | None = None):
+        self.recorder = recorder
         self.normalized_history: deque[Event] = deque(maxlen=capacity)
         self.raw_history: deque[Any] = deque(maxlen=capacity)
         self.normalized_queues: set[asyncio.Queue[Event]] = set()
@@ -103,6 +243,8 @@ class EventBus:
         except (ValueError, UnicodeDecodeError):
             value = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
         self.raw_received += 1
+        if self.recorder is not None:
+            self.recorder.record(value, self.raw_received)
         self.raw_history.append(value)
         self.raw_dropped += self._deliver(value, self.raw_queues)
         return value

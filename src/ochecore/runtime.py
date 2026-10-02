@@ -6,7 +6,7 @@ from ochecore.autodarts.auth import DeviceAuth
 from ochecore.autodarts.cloud import CloudConnection
 from ochecore.caller import Caller
 from ochecore.config import ConnectionConfig, Settings
-from ochecore.events import EventBus
+from ochecore.events import EventBus, RawEventRecorder
 from ochecore.storage import write_private_json
 from ochecore.wled import WLED
 
@@ -15,7 +15,8 @@ class Runtime:
     def __init__(self, settings: Settings, http: httpx.AsyncClient):
         self.settings = settings
         self.http = http
-        self.bus = EventBus()
+        self.debug = RawEventRecorder(settings.data_dir / "debug")
+        self.bus = EventBus(recorder=self.debug)
         self.config = settings.connection()
         self.tasks: list[asyncio.Task] = []
         self.lock = asyncio.Lock()
@@ -44,7 +45,7 @@ class Runtime:
         self.wled.start()
         self.caller.start()
 
-    async def close(self) -> None:
+    async def close(self, *, stop_debug: bool = True) -> None:
         for task in self.tasks:
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
@@ -52,11 +53,13 @@ class Runtime:
         await self.wled.close()
         await self.caller.close()
         await self.auth.close()
+        if stop_debug:
+            await self.debug.stop()
 
     async def configure(self, config: ConnectionConfig) -> None:
         async with self.lock:
             write_private_json(self.settings.data_dir / "connection.json", config.model_dump())
-            await self.close()
+            await self.close(stop_debug=False)
             if config.client_id != self.config.client_id:
                 await self.auth.forget()
             self.config = config
@@ -66,7 +69,7 @@ class Runtime:
 
     async def logout(self) -> None:
         async with self.lock:
-            await self.close()
+            await self.close(stop_debug=False)
             await self.auth.forget()
             self.bus.clear()
             self._create_connections()
@@ -84,5 +87,6 @@ class Runtime:
                 "raw_dropped_deliveries": self.bus.raw_dropped,
                 "normalized": self.cloud.normalizer.emitted,
                 "invalid_match_states": self.cloud.normalizer.invalid_states,
+                "debug": self.debug.status(),
             },
         }

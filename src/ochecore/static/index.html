@@ -637,6 +637,40 @@
 
       <section data-view="events" aria-label="Events" hidden>
         <div class="panel">
+          <div class="panel-heading">
+            <h2>Debug recording</h2>
+            <button
+              id="debug-toggle"
+              class="switch"
+              type="button"
+              role="switch"
+              aria-checked="false"
+              aria-label="Record raw events"
+              disabled
+            >
+              <span id="debug-toggle-label">Off</span>
+              <span class="switch-track" aria-hidden="true"
+                ><span class="switch-thumb"></span
+              ></span>
+            </button>
+          </div>
+          <p class="hint">
+            Save incoming raw events to a file for troubleshooting. The lists
+            below keep only the latest 100 entries. Known credential fields are
+            redacted.
+          </p>
+          <p id="debug-status" class="hint" role="status">No recording yet.</p>
+          <p id="debug-error" class="error" role="status" hidden></p>
+          <a
+            id="debug-download"
+            class="text-link"
+            href="/api/events/debug/file"
+            download
+            hidden
+            >Download debug file</a
+          >
+        </div>
+        <div class="panel">
           <div class="panel-heading event-toolbar">
             <div class="stream-picker" role="group" aria-label="Event stream">
               <button

@@ -10,8 +10,51 @@
 | CLI live | `ochecore events --follow` | `ochecore events --raw --follow` |
 
 Each history holds the latest 100 entries in memory. Each live subscriber has an independent
-bounded queue. There is no persistent journal or replay on WebSocket connection. The optional
+bounded queue. Normal operation does not write events to disk or replay on WebSocket connection. The optional
 UI switches between both streams. Both APIs remain available with the UI disabled.
+
+## Debug recording
+
+In the **Events** page, turn on **Debug recording**, reproduce the issue, then turn it off and
+select **Download debug file**. The toggle is independent of the displayed stream: it always
+captures raw AutoDarts frames. The lists still show only their latest 100 entries.
+
+The same controls work without the UI:
+
+```sh
+uv run ochecore events --debug on
+uv run ochecore events --debug status
+uv run ochecore events --debug off
+```
+
+Recording happens in the service and continues after closing the terminal or page. It survives
+AutoDarts reconnection and account/board changes. It starts off after a service restart.
+Each recording creates `data/debug/autodarts-TIMESTAMP-ID.jsonl` (inside the existing Docker
+bind mount). Existing files are retained; the API/UI offers the latest one, including after a
+restart. Older recordings remain in that folder until you remove them.
+
+Each line contains one incoming frame, including duplicates, unknown channels and control
+messages, with a receipt timestamp and raw-stream sequence number:
+
+```json
+{"schema_version":1,"sequence":42,"received_at":"2026-10-02T12:00:00+00:00","raw":{"channel":"autodarts.matches","topic":"MATCH_ID.state","data":{}}}
+```
+
+The `raw` field preserves the incoming decoded JSON with known credential fields redacted,
+just like `/api/events/raw`. Invalid JSON is recorded as a string. Captures contain future
+incoming frames only; they do not include earlier history, REST snapshots or normalized events.
+Use the frame order and timestamps to build replay tests for the normalizer.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/events/debug` | Recording state, file path, frame/byte counts and errors |
+| `PUT /api/events/debug` | `{"enabled":true}` starts; `{"enabled":false}` stops and flushes |
+| `GET /api/events/debug/file` | Download the latest stopped recording as JSONL |
+
+Recording uses a separate background writer; event delivery does not wait for disk writes.
+Stop and graceful shutdown drain pending frames. Disk errors or a full write buffer stop the
+recording and report an incomplete capture, while live event processing continues. Files are
+not limited to 100 frames; their size depends on how long recording stays on.
 
 ## Current game state
 

@@ -2,7 +2,10 @@ const $ = (id) => document.getElementById(id);
 const fields = ["client_id", "board_id"];
 const pages = {
   overview: ["Overview", "Your board and connection at a glance."],
-  integrations: ["Integrations", "Enable the lights and audio you want to use."],
+  integrations: [
+    "Integrations",
+    "Enable the lights and audio you want to use.",
+  ],
   autodarts: ["AutoDarts", "Manage your account and board connection."],
   wled: ["WLED", "Lighting effects for your game."],
   caller: ["Caller", "Choose a voice and where to hear your game."],
@@ -36,6 +39,8 @@ let boardLoading = false;
 let nextBoardRefresh = 0;
 let renderedEvents = "";
 let eventRequest = 0;
+let debugState = null;
+let debugBusy = false;
 
 async function api(path, method = "GET", body) {
   const options = { method };
@@ -50,7 +55,9 @@ async function api(path, method = "GET", body) {
       typeof data.detail === "string"
         ? data.detail
         : Array.isArray(data.detail)
-          ? data.detail.map((item) => `${item.loc.slice(1).join(" / ")}: ${item.msg}`).join("; ")
+          ? data.detail
+              .map((item) => `${item.loc.slice(1).join(" / ")}: ${item.msg}`)
+              .join("; ")
           : "Check the settings.",
     );
   }
@@ -106,8 +113,10 @@ function updateButtons() {
     dirty ||
     !config.client_id ||
     ["authenticated", "awaiting_authorization"].includes(auth);
-  $("logout").disabled = busy || !available || ["unconfigured", "disconnected"].includes(auth);
-  $("refresh-boards").disabled = busy || boardLoading || !available || auth !== "authenticated";
+  $("logout").disabled =
+    busy || !available || ["unconfigured", "disconnected"].includes(auth);
+  $("refresh-boards").disabled =
+    busy || boardLoading || !available || auth !== "authenticated";
 }
 
 function applyConfig(value) {
@@ -117,10 +126,13 @@ function applyConfig(value) {
   }
   config = value;
   renderBoardOptions(
-    dirty && !config.locked_fields.includes("board_id") ? $("board_id").value : config.board_id,
+    dirty && !config.locked_fields.includes("board_id")
+      ? $("board_id").value
+      : config.board_id,
   );
   fields.forEach((key) => {
-    if (!dirty || config.locked_fields.includes(key)) $(key).value = config[key];
+    if (!dirty || config.locked_fields.includes(key))
+      $(key).value = config[key];
   });
   $("managed").textContent = config.locked_fields.length
     ? "Locked settings are managed by config/config.yaml or environment variables."
@@ -135,7 +147,11 @@ function renderBoardOptions(selected) {
   select.replaceChildren(new Option("No board selected", ""));
   boardOptions.forEach((board) => {
     const state =
-      board.online === true ? "Online" : board.online === false ? "Offline" : "Status unknown";
+      board.online === true
+        ? "Online"
+        : board.online === false
+          ? "Offline"
+          : "Status unknown";
     select.add(new Option(`${board.name} — ${state}`, board.id));
   });
   if (selected && !boardOptions.some((board) => board.id === selected)) {
@@ -153,7 +169,9 @@ async function loadBoards() {
   try {
     const result = await api("/api/boards");
     boardOptions = result.boards;
-    renderBoardOptions(dirty ? $("board_id").value : (result.selected_board_id ?? ""));
+    renderBoardOptions(
+      dirty ? $("board_id").value : (result.selected_board_id ?? ""),
+    );
     $("boards-status").textContent = config.locked_fields.includes("board_id")
       ? "This board is managed by the service configuration."
       : boardOptions.length
@@ -175,6 +193,7 @@ function badge(id, text, tone = "") {
 
 function renderStatus() {
   const { auth, cloud, events } = status;
+  renderDebug(events.debug);
   const authLabel = labels[auth.state] ?? auth.state;
   const cloudLabel = labels[cloud.state] ?? cloud.state;
   const connected = cloud.state === "connected";
@@ -183,7 +202,11 @@ function renderStatus() {
   $("live").textContent = "Service online";
   $("live").dataset.online = "true";
   $("count").textContent = events.normalized;
-  badge("account-state", authLabel, auth.state === "authenticated" ? "good" : "");
+  badge(
+    "account-state",
+    authLabel,
+    auth.state === "authenticated" ? "good" : "",
+  );
   $("account-hint").textContent = !config.client_id
     ? "Set an OAuth Client ID in Advanced settings below to connect."
     : auth.state === "authenticated"
@@ -193,7 +216,8 @@ function renderStatus() {
         : "Sign in on AutoDarts to connect your board.";
   const board = boardOptions.find((item) => item.id === config.board_id);
   $("board-name").textContent =
-    board?.name || (config.board_id ? "Your AutoDarts board" : "Choose your board");
+    board?.name ||
+    (config.board_id ? "Your AutoDarts board" : "Choose your board");
   badge(
     "board-state",
     !config.board_id
@@ -215,9 +239,12 @@ function renderStatus() {
   const errors = [
     auth.error,
     cloud.error,
-    ...(cloud.subscription_errors ?? []).map((item) => `${item.channel}: ${item.error}.`),
+    ...(cloud.subscription_errors ?? []).map(
+      (item) => `${item.channel}: ${item.error}.`,
+    ),
   ].filter(Boolean);
-  $("connection-error").textContent = errors.join(" ") || "No connection errors reported.";
+  $("connection-error").textContent =
+    errors.join(" ") || "No connection errors reported.";
   $("connection-warning").hidden = !errors.length;
   $("warning-text").textContent =
     auth.error || cloud.error || "Some AutoDarts subscriptions need attention.";
@@ -227,14 +254,33 @@ function renderStatus() {
     $("user-code").textContent = device.user_code;
     $("verification").removeAttribute("href");
     try {
-      const url = new URL(device.verification_uri_complete || device.verification_uri);
+      const url = new URL(
+        device.verification_uri_complete || device.verification_uri,
+      );
       if (url.protocol === "https:") $("verification").href = url.href;
     } catch {
       /* Keep invalid approval links inactive. */
     }
-    const seconds = Math.max(0, Math.ceil(device.expires_at - Date.now() / 1000));
+    const seconds = Math.max(
+      0,
+      Math.ceil(device.expires_at - Date.now() / 1000),
+    );
     $("expires").textContent = `Code expires in ${seconds} seconds.`;
   }
+}
+
+function renderDebug(value) {
+  debugState = value || null;
+  $("debug-toggle").disabled = debugBusy || !debugState;
+  $("debug-toggle").setAttribute("aria-checked", String(!!value?.enabled));
+  $("debug-toggle-label").textContent = value?.enabled ? "Recording" : "Off";
+  $("debug-status").textContent = value?.file
+    ? `${value.enabled ? "Recording" : "Saved"}: ${value.file}${value.recorded == null ? "" : ` · ${value.recorded} raw frames`}${value.enabled ? " · Stop to download." : ""}`
+    : "No recording yet. Recording starts with the next incoming frame.";
+  $("debug-error").hidden = !value?.error;
+  $("debug-error").textContent = value?.error || "";
+  $("debug-download").hidden =
+    !value?.download_url || value.enabled || value.pending > 0;
 }
 
 function renderEvents(events) {
@@ -242,9 +288,12 @@ function renderEvents(events) {
   if (signature === renderedEvents) return;
   renderedEvents = signature;
   const list = $("event-list");
-  const existing = new Map([...list.children].map((item) => [item.dataset.key, item]));
+  const existing = new Map(
+    [...list.children].map((item) => [item.dataset.key, item]),
+  );
   const entries = events.map((event, index) => {
-    const key = stream === "normalized" ? event.id : `${index}:${JSON.stringify(event)}`;
+    const key =
+      stream === "normalized" ? event.id : `${index}:${JSON.stringify(event)}`;
     if (existing.has(key)) return existing.get(key);
     const details = document.createElement("details");
     const summary = document.createElement("summary");
@@ -253,19 +302,23 @@ function renderEvents(events) {
     if (stream === "normalized") {
       const time = document.createElement("span");
       time.className = "event-time";
-      time.textContent = new Date(event.received_at).toLocaleTimeString("en-GB");
+      time.textContent = new Date(event.received_at).toLocaleTimeString(
+        "en-GB",
+      );
       summary.append(time, event.event.replaceAll("_", " "));
     } else {
       summary.textContent =
-        [event?.channel, event?.topic, event?.type].filter(Boolean).join(" · ") ||
-        "AutoDarts frame";
+        [event?.channel, event?.topic, event?.type]
+          .filter(Boolean)
+          .join(" · ") || "AutoDarts frame";
     }
     pre.textContent = JSON.stringify(event, null, 2);
     details.append(summary, pre);
     return details;
   });
   list.replaceChildren(...entries.reverse());
-  $("event-count").textContent = `${events.length} ${events.length === 1 ? "entry" : "entries"}`;
+  $("event-count").textContent =
+    `${events.length} ${events.length === 1 ? "entry" : "entries"}`;
   $("empty").hidden = events.length > 0;
 }
 
@@ -273,7 +326,9 @@ async function refreshEvents() {
   if (page !== "events") return;
   const request = ++eventRequest;
   try {
-    const events = await api(stream === "raw" ? "/api/events/raw" : "/api/events");
+    const events = await api(
+      stream === "raw" ? "/api/events/raw" : "/api/events",
+    );
     if (request !== eventRequest) return;
     renderEvents(events);
     $("event-error").hidden = true;
@@ -287,7 +342,10 @@ async function refreshEvents() {
 
 async function refreshData() {
   try {
-    const [newStatus, newConfig] = await Promise.all([api("/api/status"), api("/api/config")]);
+    const [newStatus, newConfig] = await Promise.all([
+      api("/api/status"),
+      api("/api/config"),
+    ]);
     available = true;
     status = newStatus;
     applyConfig(newConfig);
@@ -302,13 +360,15 @@ async function refreshData() {
     }
   } catch {
     available = false;
+    $("debug-toggle").disabled = true;
     $("live").textContent = "Service unavailable";
     $("live").dataset.online = "false";
     $("auth-state").textContent = $("cloud-state").textContent = "Unavailable";
     badge("account-state", "Unavailable", "warning");
     badge("board-state", "Status unknown");
     $("match").textContent = "Waiting for the service to reconnect.";
-    $("warning-text").textContent = "Cannot reach OcheCore. Retrying automatically.";
+    $("warning-text").textContent =
+      "Cannot reach OcheCore. Retrying automatically.";
     $("connection-warning").hidden = false;
   }
   updateButtons();
@@ -373,6 +433,26 @@ $("logout").addEventListener("click", () =>
 $("refresh-boards").addEventListener("click", () => action(loadBoards));
 $("dismiss-notice").addEventListener("click", () => {
   $("notice").hidden = true;
+});
+
+$("debug-toggle").addEventListener("click", async () => {
+  if (busy || debugBusy || !debugState) return;
+  const enabled = !debugState.enabled;
+  debugBusy = true;
+  renderDebug(debugState);
+  try {
+    await action(async () => {
+      renderDebug(await api("/api/events/debug", "PUT", { enabled }));
+      notice(
+        enabled
+          ? "Raw-event recording started."
+          : "Recording stopped. The debug file is saved.",
+      );
+    });
+  } finally {
+    debugBusy = false;
+    $("debug-toggle").disabled = !available || !debugState;
+  }
 });
 
 document.querySelectorAll("[data-stream]").forEach((button) =>

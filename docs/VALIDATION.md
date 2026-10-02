@@ -1,11 +1,32 @@
 # Connection, events and integration validation
 
-Updated October 2, 2026 after implementing Caller. Terminal controls and the optional
+Updated October 2, 2026 after adding debug recording and selected-voice caching. Terminal controls and the optional
 UI share the same headless service.
+
+## Debug recording and voice cache
+
+All **160 Python tests** and Ruff checks pass. Debug tests verify capture beyond the 100-entry
+history limit, duplicate/unknown/invalid frames, credential redaction, ordered JSONL output,
+idempotent controls, flushing on stop and shutdown, separate recording sessions, restart with
+recording off, and disk/queue failures that leave live events running. Headless API and CLI
+tests cover controls, file download and recording across account resets.
+
+Voice tests verify that catalogue browsing starts no downloads, selecting a voice fetches only
+its pack, successful installation removes previous managed packs and temporary archives,
+failed downloads preserve the old pack, and a second selection during installation leaves
+saved settings intact. Cached selections and clearing the selection also have cleanup tests.
+
+Temporary DOM checks pass download-on-save, progress/retry, retained edits, the Events recording
+switch, both 100-entry views, duplicate-click handling, download after stop, external control
+updates and failed/offline operations. These are behavior checks; visual review remains pending.
+
+The wheel builds and Compose configuration validates. Docker rebuild again timed out without
+build output. The native server was restarted on `0.0.0.0:9180`; health, updated UI assets,
+debug status, event history APIs and `events --debug status` passed live checks. Recording is off.
 
 ## Caller
 
-All **150 Python tests** and Ruff checks pass. The built wheel includes Caller, the voice
+The initial caller implementation passed **150 Python tests** and Ruff checks. The built wheel includes Caller, the voice
 catalogue and UI assets. Compose configuration validates. The native service was restarted
 on `0.0.0.0:9180`; health, UI assets, caller status/configuration/catalogue and the caller CLI
 passed live checks. An empty PATCH verified routing without changing saved settings.
