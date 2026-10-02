@@ -373,11 +373,19 @@ Tests use HTTP mocks and a local WebSocket test server; no AutoDarts account is 
 
 ### GitHub builds
 
-The **Build** workflow runs on pull requests, pushes to `main` or `master`, and tags starting
-with `v`. To start it manually, open **Actions → Build → Run workflow** after pushing the
-workflow to GitHub's default branch. No repository secrets or AutoDarts account are needed.
+The **Build** workflow runs Ruff and pytest on Python 3.12 and 3.13 for pull requests and
+pushes to `main` or `master`. No repository secrets or AutoDarts account are needed.
 
-Ruff and pytest run on Python 3.12 and 3.13 before creating these downloadable artifacts:
+Build artifacts are created only when a push to `main` or `master` changes
+`project.version` in `pyproject.toml` and the checks pass. The comparison covers the whole
+push, including multiple commits or a merged pull request. The first push of the project
+also creates an initial build. Dependency changes alone and pull requests run checks only.
+
+To create a new build, update the version in `pyproject.toml` and
+`src/ochecore/__init__.py`, run `uv lock`, then commit and push those changes. Tags do not
+trigger another build. To retry a failed build, rerun its original workflow run in Actions.
+
+A successful version change produces these downloadable artifacts:
 
 | Artifact | Contents |
 |---|---|
@@ -402,7 +410,7 @@ Create `data` first and replace `RUN_NUMBER` with the workflow run number; `dock
 also prints the full image tag. On Linux, make the folder writable by container UID 10001.
 For ARM64, replace `amd64` with `arm64`. These builds are uploaded as Actions artifacts;
 the workflow does not publish to PyPI, a container registry or GitHub Releases. The package
-version remains the version declared in `pyproject.toml`, including for tag-triggered builds.
+version is the version declared in `pyproject.toml`.
 
 Use English in all maintained source, comments, messages, UI, configuration examples and
 documentation. `.idea` remains the original user brief; `ressources/` contains unchanged

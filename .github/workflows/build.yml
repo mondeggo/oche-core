@@ -3,18 +3,60 @@ name: Build
 on:
   push:
     branches: [main, master]
-    tags: ["v*"]
   pull_request:
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.ref }}
+  # A later ordinary push must not cancel a build triggered by a version change.
+  group: build-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
+  version:
+    name: Detect version change
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Compare project versions across the push
+        id: version
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import tomllib
+          from pathlib import Path
+
+          current = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          before = os.environ["BEFORE_SHA"]
+          previous = None
+          if before != "0" * 40:
+              subprocess.run(["git", "cat-file", "-e", f"{before}^{{commit}}"], check=True)
+              files = subprocess.check_output(
+                  ["git", "ls-tree", "--name-only", before, "--", "pyproject.toml"], text=True
+              )
+              if files.strip():
+                  content = subprocess.check_output(
+                      ["git", "show", f"{before}:pyproject.toml"], text=True
+                  )
+                  previous = tomllib.loads(content)["project"]["version"]
+
+          changed = str(previous != current).lower()
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
+              output.write(f"changed={changed}\n")
+          print(f"Project version: {previous or '(initial)'} -> {current}; build={changed}")
+          PY
+
   checks:
     name: Check Python ${{ matrix.python }}
     runs-on: ubuntu-24.04
@@ -44,7 +86,8 @@ jobs:
 
   python:
     name: Build Python packages
-    needs: checks
+    needs: [checks, version]
+    if: needs.version.outputs.changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -73,7 +116,8 @@ jobs:
 
   docker:
     name: Build Docker (${{ matrix.arch }})
-    needs: checks
+    needs: [checks, version]
+    if: needs.version.outputs.changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
