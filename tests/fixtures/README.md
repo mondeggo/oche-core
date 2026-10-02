@@ -11,6 +11,11 @@ Takeout strings follow AutoGlow-2's `_handle_raw_message` and darts-caller's boa
 
 Keep account identities, coordinates, profiles, tokens and private live captures out of fixtures.
 
+`live-visits.json` contains reduced X01 and Cricket visits from the October 2, 2026 debug
+capture. Identities and names are replaced; profiles, coordinates and account details are
+removed. It preserves the observed zero `finishedAt` timestamp, scores and dart corrections.
+Tests pair these states with the captured `Throw`, `Takeout` and takeout event shapes.
+
 `test_caller.py` varies the common match envelope across all 14 modes listed in Tools'
 `utils/game-modes.ts`, plus CountUp aliases and Cricket/Tactics settings. These are synthetic
 contract tests, not captured matches. Target and Gotcha checkout tests use the field shapes

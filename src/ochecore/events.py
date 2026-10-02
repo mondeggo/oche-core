@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from ochecore.autodarts.errors import ConnectionProblem
 
@@ -61,8 +61,6 @@ def event_name(message: CloudMessage, board_id: str, match_id: str | None) -> st
         and message.topic == f"{match_id}.events"
     ):
         return "match.events"
-    if message.channel == "autodarts.users" and message.topic.endswith(".events"):
-        return "user.events"
     return None
 
 
@@ -307,6 +305,12 @@ class Turn(BaseModel):
     finished_at: str | None = Field(default=None, alias="finishedAt")
     throws: list[Dart] = Field(default_factory=list, max_length=3)
 
+    @field_validator("finished_at")
+    @classmethod
+    def unfinished_timestamp(cls, value: str | None) -> str | None:
+        # Live AutoDarts states use Go's zero timestamp for unfinished visits.
+        return None if value and value.startswith("0001-01-01T00:00:00") else value
+
 
 class Player(BaseModel):
     id: str = Field(min_length=1)
@@ -383,6 +387,8 @@ class EventNormalizer:
         self.invalid_states = 0
         self.emitted = 0
         self.readiness: str | None = None
+        self.board_event: str | None = None
+        self.board_throws: int | None = None
         self.state_valid = False
         self.takeout_is_local = False
         self.editing = False
@@ -397,6 +403,8 @@ class EventNormalizer:
         self.takeout_context = None
         self.synchronized = False
         self.readiness = None
+        self.board_event = None
+        self.board_throws = None
         self.state_valid = False
         self.takeout_is_local = False
         self.editing = False
@@ -407,17 +415,23 @@ class EventNormalizer:
         self.state_valid = False
         self.takeout_is_local = False
         self.readiness = None
+        self.board_event = None
+        self.board_throws = None
         self.takeout_phase = None
         self.takeout_context = None
 
     def board_status(self, data: dict) -> None:
         """Recognize explicit reference statuses; absence of readiness never means ready."""
         status = data.get("status")
+        action = data.get("event")
+        self.board_event = action.lower() if isinstance(action, str) else None
+        count = data.get("numThrows")
+        self.board_throws = count if type(count) is int and 0 <= count <= 3 else None
         if not isinstance(status, str):
             self.readiness = None
             return
         status = status.lower().replace("_", " ").replace("-", " ").strip()
-        if status in {"ready", "ready for throw"}:
+        if status in {"throw", "ready", "ready for throw"}:
             self.readiness = "ready"
         elif status in {"takeout", "takeout in progress", "removing darts"}:
             self.readiness = "takeout"
@@ -603,7 +617,7 @@ class EventNormalizer:
             self.takeout_is_local = raw.event.startswith("board.") or bool(
                 (phase_context.get("player") or {}).get("is_local")
             )
-            if self.takeout_is_local:
+            if self.takeout_is_local and raw.event != "board.state":
                 self.readiness = "takeout" if phase == "takeout_started" else "waiting"
             if phase == "takeout_started":
                 self.takeout_context = context
@@ -611,7 +625,13 @@ class EventNormalizer:
             if phase == "takeout_finished":
                 self.takeout_context = None
         elif raw.event.startswith("board.") and action in {"throw detected", "manual reset"}:
-            self.readiness = "waiting"
+            state_matches = self.board_event == action and (
+                self.board_throws == raw.data.get("throwNumber")
+                if action == "throw detected"
+                else self.board_throws == 0
+            )
+            if raw.event != "board.state" and not state_matches:
+                self.readiness = "waiting"
             self.takeout_phase = None
             self.takeout_context = None
 
@@ -718,7 +738,9 @@ class EventNormalizer:
                 self.takeout_phase = None
                 self.takeout_context = None
                 self.takeout_is_local = False
-                if (context.get("player") or {}).get("is_local"):
+                if (context.get("player") or {}).get("is_local") and self.board_throws != len(
+                    turn.throws
+                ):
                     self.readiness = "waiting"
                 self._emit("throw", raw, data)
             else:

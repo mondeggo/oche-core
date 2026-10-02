@@ -55,6 +55,52 @@ def add_dart(frame, value=None):
     frame["gameScores"][frame["player"]] = 501 - turn["points"]
 
 
+@pytest.mark.parametrize("variant", ["X01", "Cricket"])
+@pytest.mark.parametrize("state_first", [True, False])
+def test_captured_visits_and_paired_board_readiness(variant, state_first):
+    frames = json.loads((Path(__file__).parent / "fixtures/live-visits.json").read_text())[variant]
+    bus = EventBus()
+    normalizer = EventNormalizer(BOARD_ID, bus)
+    normalizer.select(MATCH_ID)
+
+    def feed(name, data):
+        normalizer.consume(bus.publish("cloud", name, deepcopy(data)))
+
+    feed("match.state", frames[0])
+    feed("board.state", {"status": "Throw", "event": "Manual reset", "numThrows": 0})
+    feed("board.events", {"event": "Manual reset"})
+    assert normalizer.current_state(True)["phase"] == "ready"
+    assert not bus.normalized_history
+    for count, frame in enumerate(frames[1:4], 1):
+        status = {
+            "status": "Throw" if count < 3 else "Takeout",
+            "event": "Throw detected",
+            "numThrows": count,
+        }
+        if state_first:
+            feed("board.state", status)
+        feed("board.events", {"event": "Throw detected", "throwNumber": count})
+        feed("match.state", frame)
+        if not state_first:
+            feed("board.state", status)
+        assert normalizer.current_state(True)["phase"] == ("ready" if count < 3 else "takeout")
+        endings = [e for e in bus.normalized_history if e.event == "turn_end"]
+        assert len(endings) == (1 if count == 3 else 0)
+        feed("match.state", frame)  # Identical frames must not repeat calls.
+    assert names(bus.normalized_history).count("throw") == 3
+    if len(frames) > 4:
+        feed("match.state", frames[4])
+        assert bus.normalized_history[-1].event == "throw_corrected"
+    feed(
+        "board.state", {"status": "Takeout in progress", "event": "Takeout started", "numThrows": 3}
+    )
+    feed("board.events", {"event": "Takeout started"})
+    feed("board.state", {"status": "Throw", "event": "Takeout finished", "numThrows": 0})
+    feed("board.events", {"event": "Takeout finished"})
+    assert normalizer.current_state(True)["phase"] == "ready"
+    assert names(bus.normalized_history).count("takeout_finished") == 1
+
+
 def test_three_darts_repeat_and_finished_timestamp(frame, replay):
     for index in range(3):
         add_dart(frame)

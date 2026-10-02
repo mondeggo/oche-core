@@ -163,10 +163,15 @@ evict entries from a normalized subscriber's queue or normalized history.
 AutoDarts subscription errors also remain in the raw stream. They appear under
 `cloud.subscription_errors` in `/api/status`, rather than being counted as malformed messages.
 Rejection of a board or match topic marks the connection `degraded` and makes `/readyz` return
-503. Rejection of the optional user-events topic is shown as a warning; game normalization
-uses board and match topics. Errors clear on topic removal, incoming data for that topic, or
-reconnection. The development `darts-caller` Client ID returned `unauthorized client` for the
-user-events topic during the October 2 deployment check.
+503. OcheCore subscribes only to board and match topics. The unused user-events subscription
+was removed after the development Client ID rejected it. Errors clear on topic removal,
+incoming data for that topic, or reconnection.
+
+The October 2 live recording contains 490 frames, including X01 and Cricket scoring states.
+It confirmed `Throw` as an explicit board-ready status and `0001-01-01T00:00:00Z` as an
+unfinished visit, rather than an end-of-turn signal. Paired board state/event frames preserve
+readiness; scored darts do not invalidate a matching board throw count. Reduced, anonymized
+visits cover this behavior and a real dart correction in the regression tests.
 
 ## Comparison with supplied resources
 
@@ -185,8 +190,8 @@ Checked October 2, 2026:
 
 The X01 fixture and replay transitions are synthetic and based on these sources. They test
 local/remote/guest attribution, corrections, undo, busts, wins, leg changes and reconnection.
-The real board detail response confirmed nested `state.connected`. A previously observed
-match's state endpoint returned 404, so no live scoring capture was available for this change.
+The real board detail response confirmed nested `state.connected`. Live X01 and Cricket
+visits now supplement the synthetic cases; see the capture notes above.
 Caller replay tests now cover the common scoring/win contracts in all 14 reference modes,
 CountUp aliases and Cricket/Tactics, plus targeted checkout and target cases. These transitions
 are synthetic; full live-match acceptance across the modes remains pending.

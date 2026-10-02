@@ -77,7 +77,7 @@ def tokens(auth):
     auth._save({"access_token": "access", "refresh_token": "refresh", "expires_in": 900})
 
 
-@pytest.mark.parametrize("channel", ["autodarts.users", "autodarts.boards", "autodarts.matches"])
+@pytest.mark.parametrize("channel", ["autodarts.boards", "autodarts.matches"])
 async def test_subscription_rejection_is_raw_and_visible_without_stopping_other_topics(
     tmp_path, channel
 ):
@@ -103,7 +103,7 @@ async def test_subscription_rejection_is_raw_and_visible_without_stopping_other_
         assert cloud.status()["subscription_errors"] == [
             {"channel": channel, "topic": topic, "error": "unauthorized client"}
         ]
-        expected_state = "connected" if channel == "autodarts.users" else "degraded"
+        expected_state = "degraded"
         assert cloud.state == expected_state
         # A healthy topic must not conceal a different rejected subscription.
         await cloud.on_message(
@@ -267,7 +267,7 @@ async def test_websocket_reconnect_restores_all_subscriptions(tmp_path):
     async def server(ws):
         assert "authorization" not in ws.request.headers
         assert parse_qs(urlsplit(ws.request.path).query) == {"code": [tickets[-1]]}
-        subscriptions = [json.loads(await ws.recv()) for _ in range(6)]
+        subscriptions = [json.loads(await ws.recv()) for _ in range(5)]
         connections.append(subscriptions)
         if len(connections) == 1:
             await ws.close(code=1012, reason="restart")
@@ -291,8 +291,7 @@ async def test_websocket_reconnect_restores_all_subscriptions(tmp_path):
             assert request.method == "POST"
             tickets.append(f"ticket {len(tickets)}&+/?")
             return httpx.Response(201, json={"code": tickets[-1]})
-        if request.url.path.endswith("userinfo"):
-            return httpx.Response(200, json={"sub": "user-1"})
+        assert not request.url.path.endswith("userinfo")
         if "/boards/" in request.url.path:
             return httpx.Response(200, json={"matchId": MATCH_ID})
         return httpx.Response(200, json={"id": MATCH_ID, "turns": []})
@@ -313,7 +312,11 @@ async def test_websocket_reconnect_restores_all_subscriptions(tmp_path):
                         while (await queue.get())["data"].get("marker") != "after-reconnect":
                             pass
                     assert connections[0] == connections[1]
-                    assert len(connections[1]) == 6
+                    assert len(connections[1]) == 5
+                    assert {item["channel"] for item in connections[1]} == {
+                        "autodarts.boards",
+                        "autodarts.matches",
+                    }
                     assert cloud.reconnects == 1
                     assert cloud.state == "connected"
                     assert len(tickets) == 2

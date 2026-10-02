@@ -173,9 +173,7 @@ class CloudConnection:
     def _update_subscription_status(self) -> None:
         if self.state not in {"connected", "degraded"}:
             return
-        required_failed = any(
-            channel != "autodarts.users" for channel, _ in self.subscription_errors
-        )
+        required_failed = bool(self.subscription_errors)
         self.state = "degraded" if required_failed else "connected"
         self.error = (
             "AutoDarts rejected a board or match subscription." if required_failed else None
@@ -274,9 +272,6 @@ class CloudConnection:
             try:
                 token = await self.auth.access_token()
                 self.state = "connecting"
-                user = await self.get("/auth/v1/userinfo")
-                if not user or not isinstance(user.get("sub"), str):
-                    raise ConnectionProblem("The AutoDarts profile does not contain a user ID.")
                 ticket = await self.request_ticket()
                 token = await self.auth.access_token()
                 async with connect(
@@ -296,7 +291,6 @@ class CloudConnection:
                     await self.subscription(ws, "autodarts.boards", f"{self.board_id}.matches")
                     await self.subscription(ws, "autodarts.boards", f"{self.board_id}.events")
                     await self.subscription(ws, "autodarts.boards", f"{self.board_id}.state")
-                    await self.subscription(ws, "autodarts.users", f"{user['sub']}.events")
                     await self.reconcile(ws)
                     self.state, self.error = "connected", None
                     next_reconcile = time.monotonic() + self.reconcile_interval

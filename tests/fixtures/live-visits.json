@@ -1,0 +1,534 @@
+{
+  "X01": [
+    {
+      "variant": "X01",
+      "set": 1,
+      "leg": 1,
+      "round": 2,
+      "player": 0,
+      "gameScores": [
+        501,
+        421
+      ],
+      "gameWinner": -1,
+      "winner": -1,
+      "settings": {
+        "baseScore": 501,
+        "bullMode": "25/50",
+        "inMode": "Straight",
+        "maxRounds": 50,
+        "outMode": "Double"
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "players": [
+        {
+          "id": "captured-1",
+          "name": "Local player",
+          "cpuPPR": null,
+          "boardId": "11111111-1111-4111-8111-111111111111"
+        },
+        {
+          "id": "captured-2",
+          "name": "Bot",
+          "cpuPPR": 20
+        }
+      ],
+      "turns": [
+        {
+          "round": 2,
+          "points": 0,
+          "score": 0,
+          "busted": false,
+          "finishedAt": "0001-01-01T00:00:00Z",
+          "id": "captured-3",
+          "playerId": "captured-1",
+          "throws": []
+        }
+      ]
+    },
+    {
+      "variant": "X01",
+      "set": 1,
+      "leg": 1,
+      "round": 2,
+      "player": 0,
+      "gameScores": [
+        493,
+        421
+      ],
+      "gameWinner": -1,
+      "winner": -1,
+      "settings": {
+        "baseScore": 501,
+        "bullMode": "25/50",
+        "inMode": "Straight",
+        "maxRounds": 50,
+        "outMode": "Double"
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "players": [
+        {
+          "id": "captured-1",
+          "name": "Local player",
+          "cpuPPR": null,
+          "boardId": "11111111-1111-4111-8111-111111111111"
+        },
+        {
+          "id": "captured-2",
+          "name": "Bot",
+          "cpuPPR": 20
+        }
+      ],
+      "turns": [
+        {
+          "round": 2,
+          "points": 8,
+          "score": 493,
+          "busted": false,
+          "finishedAt": "0001-01-01T00:00:00Z",
+          "id": "captured-3",
+          "playerId": "captured-1",
+          "throws": [
+            {
+              "id": "captured-4",
+              "segment": {
+                "bed": "SingleInner",
+                "multiplier": 1,
+                "name": "S8",
+                "number": 8
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "variant": "X01",
+      "set": 1,
+      "leg": 1,
+      "round": 2,
+      "player": 0,
+      "gameScores": [
+        490,
+        421
+      ],
+      "gameWinner": -1,
+      "winner": -1,
+      "settings": {
+        "baseScore": 501,
+        "bullMode": "25/50",
+        "inMode": "Straight",
+        "maxRounds": 50,
+        "outMode": "Double"
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "players": [
+        {
+          "id": "captured-1",
+          "name": "Local player",
+          "cpuPPR": null,
+          "boardId": "11111111-1111-4111-8111-111111111111"
+        },
+        {
+          "id": "captured-2",
+          "name": "Bot",
+          "cpuPPR": 20
+        }
+      ],
+      "turns": [
+        {
+          "round": 2,
+          "points": 11,
+          "score": 490,
+          "busted": false,
+          "finishedAt": "0001-01-01T00:00:00Z",
+          "id": "captured-3",
+          "playerId": "captured-1",
+          "throws": [
+            {
+              "id": "captured-4",
+              "segment": {
+                "bed": "SingleInner",
+                "multiplier": 1,
+                "name": "S8",
+                "number": 8
+              }
+            },
+            {
+              "id": "captured-5",
+              "segment": {
+                "bed": "Triple",
+                "multiplier": 3,
+                "name": "T1",
+                "number": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "variant": "X01",
+      "set": 1,
+      "leg": 1,
+      "round": 2,
+      "player": 0,
+      "gameScores": [
+        470,
+        421
+      ],
+      "gameWinner": -1,
+      "winner": -1,
+      "settings": {
+        "baseScore": 501,
+        "bullMode": "25/50",
+        "inMode": "Straight",
+        "maxRounds": 50,
+        "outMode": "Double"
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "players": [
+        {
+          "id": "captured-1",
+          "name": "Local player",
+          "cpuPPR": null,
+          "boardId": "11111111-1111-4111-8111-111111111111"
+        },
+        {
+          "id": "captured-2",
+          "name": "Bot",
+          "cpuPPR": 20
+        }
+      ],
+      "turns": [
+        {
+          "round": 2,
+          "points": 31,
+          "score": 470,
+          "busted": false,
+          "finishedAt": "0001-01-01T00:00:00Z",
+          "id": "captured-3",
+          "playerId": "captured-1",
+          "throws": [
+            {
+              "id": "captured-4",
+              "segment": {
+                "bed": "SingleInner",
+                "multiplier": 1,
+                "name": "S8",
+                "number": 8
+              }
+            },
+            {
+              "id": "captured-5",
+              "segment": {
+                "bed": "Triple",
+                "multiplier": 3,
+                "name": "T1",
+                "number": 1
+              }
+            },
+            {
+              "id": "captured-6",
+              "segment": {
+                "bed": "SingleInner",
+                "multiplier": 1,
+                "name": "S20",
+                "number": 20
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "variant": "X01",
+      "set": 1,
+      "leg": 1,
+      "round": 2,
+      "player": 0,
+      "gameScores": [
+        487,
+        421
+      ],
+      "gameWinner": -1,
+      "winner": -1,
+      "settings": {
+        "baseScore": 501,
+        "bullMode": "25/50",
+        "inMode": "Straight",
+        "maxRounds": 50,
+        "outMode": "Double"
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "players": [
+        {
+          "id": "captured-1",
+          "name": "Local player",
+          "cpuPPR": null,
+          "boardId": "11111111-1111-4111-8111-111111111111"
+        },
+        {
+          "id": "captured-2",
+          "name": "Bot",
+          "cpuPPR": 20
+        }
+      ],
+      "turns": [
+        {
+          "round": 2,
+          "points": 14,
+          "score": 487,
+          "busted": false,
+          "finishedAt": "0001-01-01T00:00:00Z",
+          "id": "captured-3",
+          "playerId": "captured-1",
+          "throws": [
+            {
+              "id": "captured-4",
+              "segment": {
+                "bed": "SingleInner",
+                "multiplier": 1,
+                "name": "S8",
+                "number": 8
+              }
+            },
+            {
+              "id": "captured-5",
+              "segment": {
+                "bed": "Triple",
+                "multiplier": 3,
+                "name": "T1",
+                "number": 1
+              }
+            },
+            {
+              "id": "captured-6",
+              "segment": {
+                "bed": "Triple",
+                "multiplier": 3,
+                "name": "T1",
+                "number": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "Cricket": [
+    {
+      "variant": "Cricket",
+      "set": 1,
+      "leg": 1,
+      "round": 3,
+      "player": 0,
+      "gameScores": [
+        0
+      ],
+      "gameWinner": -1,
+      "winner": -1,
+      "settings": {
+        "cutThroat": false,
+        "gameMode": "Cricket",
+        "maxRounds": 50,
+        "scoringMode": "Standard"
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "players": [
+        {
+          "id": "captured-7",
+          "name": "Local player",
+          "cpuPPR": null,
+          "boardId": "11111111-1111-4111-8111-111111111111"
+        }
+      ],
+      "turns": [
+        {
+          "round": 3,
+          "points": 0,
+          "score": 0,
+          "busted": false,
+          "finishedAt": "0001-01-01T00:00:00Z",
+          "id": "captured-8",
+          "playerId": "captured-7",
+          "throws": []
+        }
+      ]
+    },
+    {
+      "variant": "Cricket",
+      "set": 1,
+      "leg": 1,
+      "round": 3,
+      "player": 0,
+      "gameScores": [
+        0
+      ],
+      "gameWinner": -1,
+      "winner": -1,
+      "settings": {
+        "cutThroat": false,
+        "gameMode": "Cricket",
+        "maxRounds": 50,
+        "scoringMode": "Standard"
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "players": [
+        {
+          "id": "captured-7",
+          "name": "Local player",
+          "cpuPPR": null,
+          "boardId": "11111111-1111-4111-8111-111111111111"
+        }
+      ],
+      "turns": [
+        {
+          "round": 3,
+          "points": 0,
+          "score": 0,
+          "busted": false,
+          "finishedAt": "0001-01-01T00:00:00Z",
+          "id": "captured-8",
+          "playerId": "captured-7",
+          "throws": [
+            {
+              "id": "captured-9",
+              "segment": {
+                "bed": "SingleOuter",
+                "multiplier": 1,
+                "name": "S17",
+                "number": 17
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "variant": "Cricket",
+      "set": 1,
+      "leg": 1,
+      "round": 3,
+      "player": 0,
+      "gameScores": [
+        0
+      ],
+      "gameWinner": -1,
+      "winner": -1,
+      "settings": {
+        "cutThroat": false,
+        "gameMode": "Cricket",
+        "maxRounds": 50,
+        "scoringMode": "Standard"
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "players": [
+        {
+          "id": "captured-7",
+          "name": "Local player",
+          "cpuPPR": null,
+          "boardId": "11111111-1111-4111-8111-111111111111"
+        }
+      ],
+      "turns": [
+        {
+          "round": 3,
+          "points": 0,
+          "score": 0,
+          "busted": false,
+          "finishedAt": "0001-01-01T00:00:00Z",
+          "id": "captured-8",
+          "playerId": "captured-7",
+          "throws": [
+            {
+              "id": "captured-9",
+              "segment": {
+                "bed": "SingleOuter",
+                "multiplier": 1,
+                "name": "S17",
+                "number": 17
+              }
+            },
+            {
+              "id": "captured-10",
+              "segment": {
+                "bed": "SingleInner",
+                "multiplier": 1,
+                "name": "S17",
+                "number": 17
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "variant": "Cricket",
+      "set": 1,
+      "leg": 1,
+      "round": 3,
+      "player": 0,
+      "gameScores": [
+        0
+      ],
+      "gameWinner": -1,
+      "winner": -1,
+      "settings": {
+        "cutThroat": false,
+        "gameMode": "Cricket",
+        "maxRounds": 50,
+        "scoringMode": "Standard"
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "players": [
+        {
+          "id": "captured-7",
+          "name": "Local player",
+          "cpuPPR": null,
+          "boardId": "11111111-1111-4111-8111-111111111111"
+        }
+      ],
+      "turns": [
+        {
+          "round": 3,
+          "points": 0,
+          "score": 0,
+          "busted": false,
+          "finishedAt": "0001-01-01T00:00:00Z",
+          "id": "captured-8",
+          "playerId": "captured-7",
+          "throws": [
+            {
+              "id": "captured-9",
+              "segment": {
+                "bed": "SingleOuter",
+                "multiplier": 1,
+                "name": "S17",
+                "number": 17
+              }
+            },
+            {
+              "id": "captured-10",
+              "segment": {
+                "bed": "SingleInner",
+                "multiplier": 1,
+                "name": "S17",
+                "number": 17
+              }
+            },
+            {
+              "id": "captured-11",
+              "segment": {
+                "bed": "Outside",
+                "multiplier": 0,
+                "name": "M17",
+                "number": 17
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

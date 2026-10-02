@@ -92,18 +92,17 @@ are not persisted or exposed in status responses. Example subscription:
 | `autodarts.boards` | `{boardId}.matches` | `board.matches` |
 | `autodarts.boards` | `{boardId}.events` | `board.events` |
 | `autodarts.boards` | `{boardId}.state` | `board.state` |
-| `autodarts.users` | `{userId}.events` | `user.events` |
 | `autodarts.matches` | `{matchId}.state` | `match.state` |
 | `autodarts.matches` | `{matchId}.events` | `match.events` |
 
-Subscribe to board/user topics, read the board, subscribe to its match, and load a REST snapshot.
+Subscribe to board topics, read the board, subscribe to its match, and load a REST snapshot.
 Remove the previous subscription when the match changes. Reconcile periodically to catch
 missed lifecycle events. Restore subscriptions and reload state after reconnecting.
 
-On October 2, the development `darts-caller` Client ID was rejected for the optional
-`autodarts.users` subscription with `unauthorized client`. This appears in the raw API and
-`cloud.subscription_errors`; it does not supply normalized game events. Rejected board or
-match subscriptions mark the connection `degraded` and readiness returns 503.
+The October 2 live capture confirmed that the development `darts-caller` Client ID rejects
+`autodarts.users` with `unauthorized client`. OcheCore no longer requests that unused topic
+or loads the user profile during stream setup. Board and match topics provide game events.
+Rejected board or match subscriptions still mark the connection `degraded`; readiness returns 503.
 
 References: supplied caller functions `on_open_autodarts`, `listen_to_match` and
 `on_message_autodarts`; Tools `entrypoints/match.content/index.ts`; and the
