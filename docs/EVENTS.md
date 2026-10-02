@@ -68,11 +68,15 @@ the greater of 60 seconds or three reconciliation intervals. Missing or invalid 
 clears displayed scores while keeping the event comparison baseline. The phase is `waiting`
 until a valid match state arrives; with no active match it is `idle`.
 
-For local players, `ready` requires explicit board status `Ready` or `Ready for throw`.
+For local players, `ready` requires explicit board status `Throw`, `Ready` or `Ready for throw`.
 Unknown/calibrating statuses and new detection signals use `waiting`. Completed local visits
 and local takeout signals use `takeout`; takeout completion waits for fresh readiness.
-Remote players and bots cannot enable local green lighting. These readiness strings are based
-on supplied references and still require validation during real matches.
+Remote players and bots cannot enable local ready lighting. `Throw` and paired detection/takeout
+messages were verified against the October 2 X01 and Cricket capture.
+
+`manual_reset`, `calibration_started` and `calibration_finished` are normalized from the board
+event stream. Their paired board-state messages update readiness without emitting duplicates.
+These board-wide events can arrive outside a match and do not require a player.
 
 ### Raw frames
 

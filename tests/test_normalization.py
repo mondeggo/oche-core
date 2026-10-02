@@ -70,7 +70,7 @@ def test_captured_visits_and_paired_board_readiness(variant, state_first):
     feed("board.state", {"status": "Throw", "event": "Manual reset", "numThrows": 0})
     feed("board.events", {"event": "Manual reset"})
     assert normalizer.current_state(True)["phase"] == "ready"
-    assert not bus.normalized_history
+    assert names(bus.normalized_history) == ["manual_reset"]
     for count, frame in enumerate(frames[1:4], 1):
         status = {
             "status": "Throw" if count < 3 else "Takeout",

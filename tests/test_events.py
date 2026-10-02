@@ -1,5 +1,21 @@
 from ochecore.autodarts.cloud import MatchState
-from ochecore.events import EventBus, event_name, parse_cloud_message
+from ochecore.events import Event, EventBus, EventNormalizer, event_name, parse_cloud_message
+
+
+def test_board_maintenance_events_emit_once_from_paired_envelopes():
+    bus = EventBus()
+    normalizer = EventNormalizer("board", bus)
+    for action, expected in [
+        ("Manual reset", "manual_reset"),
+        ("Calibration started", "calibration_started"),
+        ("Calibration finished", "calibration_finished"),
+    ]:
+        for topic in ("board.state", "board.events"):
+            normalizer.consume(
+                Event(sequence=1, source="autodarts", event=topic, data={"event": action})
+            )
+        assert bus.normalized_history[-1].event == expected
+    assert len(bus.normalized_history) == 3
 
 
 def test_parser_rejects_invalid_frames_and_filters_old_matches():

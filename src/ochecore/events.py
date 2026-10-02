@@ -364,6 +364,9 @@ GameEventName = Literal[
     "match_win",
     "takeout_started",
     "takeout_finished",
+    "manual_reset",
+    "calibration_started",
+    "calibration_finished",
 ]
 
 
@@ -599,6 +602,15 @@ class EventNormalizer:
         if not isinstance(action, str) or raw.snapshot:
             return
         action = action.lower().replace("_", " ").replace("-", " ")
+        # Board state and event envelopes are paired. Emit once from the event stream.
+        if raw.event == "board.events" and action in {
+            "manual reset",
+            "calibration started",
+            "calibration finished",
+        }:
+            self._emit(action.replace(" ", "_"), raw, self._context(self.frame))
+            if action == "calibration started":
+                self.readiness = "waiting"
         phases = {
             "takeout started": "takeout_started",
             "takeout start": "takeout_started",
