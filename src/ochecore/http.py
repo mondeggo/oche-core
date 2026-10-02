@@ -66,6 +66,17 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
             await runtime.wled.configure(config)
         return {"saved": True}
 
+    @router.patch("/api/wled")
+    async def update_wled(config: WLEDConfig, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            if config.model_fields_set:
+                updated = runtime.wled.config.model_copy(
+                    update={key: getattr(config, key) for key in config.model_fields_set}
+                )
+                await runtime.wled.configure(updated)
+        return {"saved": True}
+
     @router.get("/api/wled/status")
     async def wled_status(request: Request):
         return request.app.state.runtime.wled.status()

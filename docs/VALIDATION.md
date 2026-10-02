@@ -1,7 +1,29 @@
 # Connection, event and WLED validation
 
-Updated October 2, 2026 after refining theme contrast. Terminal controls and the optional
+Updated October 2, 2026 after adding integration switches. Terminal controls and the optional
 UI share the same headless service.
+
+## Integration navigation and activation
+
+AutoDarts now sits with Overview and Events in the main navigation. The Integrations heading
+is separated by a divider; All integrations contains activation switches. WLED appears in
+the sidebar only while enabled. Caller remains an unavailable entry in the list; its empty
+detail page and old navigation code were removed.
+
+`PATCH /api/wled` merges supplied top-level configuration fields under the existing service
+lock. UI switches and CLI activation change only `enabled`; device saves replace only the
+device list. Saving an older form cannot undo a separate integration-disable request.
+Saved configuration survives disable/re-enable and service restarts.
+
+All **119 Python tests** passed, including new partial-update preservation, restart, validation,
+origin and content-type checks. Temporary DOM checks passed activation, conditional navigation,
+disabled deep links, external CLI changes, retained form drafts, failed/duplicate switch
+requests, offline recovery and the existing WLED discovery/editor flows. Theme checks still
+pass. These are programmatic checks; visual browser review remains pending as described below.
+
+The native service was restarted on `0.0.0.0:9180`. Health and updated UI assets passed live
+checks; an empty PATCH confirmed the new route without changing integration settings. The
+wheel contains the updated assets. Compose configuration passed, but the Docker build timed out.
 
 ## Dark and light themes
 

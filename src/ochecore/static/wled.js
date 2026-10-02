@@ -6,6 +6,7 @@
   let working = false;
   let refreshing = null;
   let latestStatus = null;
+  let statusError = "";
   let discovered = [];
   const phases = {
     ready: "Ready to throw",
@@ -58,6 +59,16 @@
   });
 
   function buttons() {
+    $("wled-toggle").disabled = working || !latestStatus || !!statusError;
+    $("wled-toggle-label").textContent = working
+      ? "Saving…"
+      : statusError
+        ? "Unavailable"
+        : !latestStatus
+          ? "Loading…"
+          : latestStatus.enabled
+            ? "On"
+            : "Off";
     if (working) {
       [...form.elements].forEach((control) => {
         control.disabled = true;
@@ -221,7 +232,6 @@
   }
 
   function render() {
-    $("wled-enabled").checked = configuration.enabled;
     const select = $("wled-device");
     select.replaceChildren(...configuration.devices.map((item) => new Option(item.name, item.id)));
     if (!device()) selected = configuration.devices[0]?.id || "";
@@ -309,7 +319,6 @@
   }
 
   function collect() {
-    configuration.enabled = $("wled-enabled").checked;
     const current = device();
     if (!current) return;
     current.name = $("wled-name").value.trim();
@@ -367,19 +376,22 @@
   }
 
   function refreshWled() {
-    if (page !== "wled" || working) return;
+    if (working) return;
     if (refreshing) return refreshing;
     refreshing = (async () => {
       try {
         latestStatus = await api("/api/wled/status");
-        if (!configuration) await load();
+        statusError = "";
+        syncIntegration();
+        if (page === "wled" && !configuration) await load();
         renderStatus();
-        $("wled-error").textContent = latestStatus.error || "";
-        $("wled-error").hidden = !latestStatus.error;
       } catch (error) {
-        $("wled-error").textContent = error.message;
-        $("wled-error").hidden = false;
+        statusError = error.message;
       } finally {
+        for (const id of ["wled-error", "wled-integration-error"]) {
+          $(id).textContent = statusError || latestStatus?.error || "";
+          $(id).hidden = !$(id).textContent;
+        }
         refreshing = null;
         buttons();
       }
@@ -387,13 +399,18 @@
     return refreshing;
   }
 
+  function syncIntegration() {
+    const enabled = latestStatus.enabled;
+    if (configuration) configuration.enabled = enabled;
+    $("wled-toggle").setAttribute("aria-checked", String(enabled));
+    $("wled-settings").hidden = !enabled;
+    setIntegrationEnabled("wled", enabled);
+  }
+
   async function work(task) {
     if (working) return;
     working = true;
-    const controls = [...form.elements];
-    controls.forEach((control) => {
-      control.disabled = true;
-    });
+    buttons();
     try {
       await refreshing;
       await task();
@@ -419,9 +436,22 @@
     event.preventDefault();
     collect();
     work(async () => {
-      await api("/api/wled", "PUT", configuration);
+      await api("/api/wled", "PATCH", { devices: configuration.devices });
       await load();
       notice("WLED settings saved.");
+    });
+  });
+  $("wled-toggle").addEventListener("click", () => {
+    const enabled = !latestStatus.enabled;
+    work(async () => {
+      await api("/api/wled", "PATCH", { enabled });
+      latestStatus.enabled = enabled;
+      syncIntegration();
+      notice(
+        enabled
+          ? "WLED enabled. Open its settings to configure lights."
+          : "WLED disabled. Settings kept.",
+      );
     });
   });
   $("wled-device").addEventListener("change", () => {

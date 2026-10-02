@@ -212,11 +212,12 @@ nav a[aria-current="page"] {
   font-weight: 650;
 }
 .nav-label {
-  margin: 28px 13px 9px;
+  margin: 24px 0 9px;
+  padding: 16px 13px 0;
+  border-top: 1px solid var(--border);
 }
-.nav-note {
-  font-size: 10px;
-  color: var(--muted);
+nav [data-integration] {
+  padding-left: 26px;
 }
 .sidebar-footer {
   margin-top: auto;
@@ -247,14 +248,16 @@ nav a[aria-current="page"] {
 #live[data-online="true"]::before {
   background: var(--online);
 }
-.theme-toggle {
-  width: 100%;
+.switch {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
   font-size: 13px;
 }
-.theme-track {
+.theme-toggle {
+  width: 100%;
+}
+.switch-track {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
@@ -265,17 +268,17 @@ nav a[aria-current="page"] {
   border-radius: 20px;
   background: var(--inset);
 }
-.theme-thumb {
+.switch-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
   background: var(--muted);
 }
-.theme-toggle[aria-checked="true"] .theme-track {
+.switch[aria-checked="true"] .switch-track {
   border-color: var(--primary);
   background: var(--primary);
 }
-.theme-toggle[aria-checked="true"] .theme-thumb {
+.switch[aria-checked="true"] .switch-thumb {
   transform: translateX(12px);
   background: var(--primary-text);
 }
@@ -407,21 +410,24 @@ dt {
   align-items: center;
   gap: 20px;
   padding: 25px 0;
-  text-decoration: none;
-  color: inherit;
 }
 .integration-row + .integration-row {
   border-top: 1px solid var(--border);
 }
-.integration-row > div {
+.integration-description {
   flex: 1;
 }
 .integration-row p {
   font-size: 13px;
 }
-.integration-row:hover h2 {
-  color: var(--link);
-  text-decoration: underline;
+.integration-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+}
+.integration-controls .switch {
+  min-width: 100px;
 }
 .actions,
 .field-row {
@@ -528,16 +534,6 @@ summary {
 }
 .error {
   color: var(--error);
-}
-.planned-panel {
-  padding: 44px;
-}
-.planned-panel h2 {
-  margin-top: 20px;
-  font-size: 22px;
-}
-.planned-panel .button {
-  margin-top: 28px;
 }
 .stream-picker {
   display: flex;
@@ -669,7 +665,7 @@ pre {
     flex-wrap: wrap;
     gap: 12px;
   }
-  .integration-row > div {
+  .integration-description {
     flex-basis: 65%;
   }
   .event-toolbar {

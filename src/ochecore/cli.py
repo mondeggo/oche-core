@@ -208,14 +208,15 @@ def execute_wled(args, client) -> None:
             request(client, "PUT", "/api/wled", config.model_dump(mode="json"))
         print_json(request(client, "GET", "/api/wled"))
     elif command in {"enable", "disable"}:
-        config = request(client, "GET", "/api/wled")
-        target = config
+        update = {"enabled": command == "enable"}
         if args.device:
+            config = request(client, "GET", "/api/wled")
             target = next((d for d in config["devices"] if d["id"] == args.device), None)
             if target is None:
                 raise ControlError("Unknown WLED device. Save it first.")
-        target["enabled"] = command == "enable"
-        print_json(request(client, "PUT", "/api/wled", config))
+            target["enabled"] = command == "enable"
+            update = {"devices": config["devices"]}
+        print_json(request(client, "PATCH", "/api/wled", update))
     else:
         device = args.device
         if not device or any(

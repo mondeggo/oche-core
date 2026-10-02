@@ -175,11 +175,14 @@ The [Oche palette handoff](docs/oche-theme.css) contains matching dark/light CSS
 component mapping notes for the Oche app. It is a reference file, not loaded by OcheCore.
 
 - **Overview** shows the selected board, account, cloud connection and game event count.
-- **AutoDarts** contains account login and board selection. OAuth settings and connection
+- **AutoDarts** is a main navigation item for the core account and board connection, separate
+  from optional integrations. OAuth settings and connection
   diagnostics are under expandable details.
 - **Events** switches between normalized game events and raw AutoDarts frames. Open an entry
   to inspect its JSON payload; the view updates automatically.
-- **Integrations** links to AutoDarts and WLED. Caller is marked as planned.
+- **All integrations** switches integrations on or off immediately. Enabled integrations appear
+  below it in the sidebar; disabling them keeps their saved configuration. Changes through the
+  CLI or another browser also update navigation. Caller is marked as planned and cannot be enabled.
 - **WLED** manages controllers, lighting targets, phase colours, game effects and matrix
   scores. Saved targets have a timed test button; settings remain active when the page closes.
 
@@ -189,12 +192,13 @@ Settings and login data are saved as JSON in `data/`; there is no database.
 
 ## WLED lighting and matrix scores
 
-Open **WLED → Discover devices**, then choose **Add** next to a controller. Discovery shows
-verified controllers by name and address; it also works while WLED automation is disabled.
+Enable **WLED** in **All integrations**, then open its **Settings** or sidebar entry.
+Choose **Discover devices**, then **Add** next to a controller. Discovery shows verified
+controllers by name and address. CLI/API discovery also works while automation is disabled.
 Adding fills the form without saving or activating any lights. You can also use **Add device**
 to enter an HTTP address manually. Save the device and select **Check connection**.
 This loads its existing segments and available effects. Add a lighting target, choose its
-segment and mode, then enable WLED and save. **Test for 3 seconds** previews the target without
+segment and mode, then save. **Test for 3 seconds** previews the target without
 a match and returns to the current game phase afterward.
 
 - **Whole segment**: independent colour, brightness and native WLED effect for each phase.
@@ -306,6 +310,7 @@ save. Old YAML/environment options for that adapter are also ignored. See the
 | `GET /api/status` | Connection states and counters without secrets |
 | `GET /api/game` | Current phase, reason, player and display scores |
 | `GET /api/wled`, `PUT /api/wled` | Saved WLED controllers and target configuration |
+| `PATCH /api/wled` | Update only supplied top-level fields: `enabled` or the complete `devices` list; omitted fields stay unchanged |
 | `GET /api/wled/status` | Device connectivity, errors, capabilities and current phase |
 | `POST /api/wled/discover` | Find reachable WLED controllers via mDNS; body `{}`; does not save devices |
 | `POST /api/wled/{device_id}/probe` | Check controller capabilities; body `{}` |

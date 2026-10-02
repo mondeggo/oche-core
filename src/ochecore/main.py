@@ -56,7 +56,7 @@ def create_app(settings: Settings | None = None, transport=None) -> FastAPI:
             request.headers.get("origin"), request.headers.get("host", ""), request.url.scheme
         ):
             return JSONResponse({"detail": "Origin not allowed."}, status_code=403)
-        if request.method in {"POST", "PUT"} and not request.headers.get(
+        if request.method in {"POST", "PUT", "PATCH"} and not request.headers.get(
             "content-type", ""
         ).startswith("application/json"):
             return JSONResponse({"detail": "Use application/json."}, status_code=415)

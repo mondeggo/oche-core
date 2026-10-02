@@ -2,12 +2,12 @@ const $ = (id) => document.getElementById(id);
 const fields = ["client_id", "board_id"];
 const pages = {
   overview: ["Overview", "Your board and connection at a glance."],
-  integrations: ["Integrations", "Connect your board, lights and audio."],
+  integrations: ["Integrations", "Enable the lights and audio you want to use."],
   autodarts: ["AutoDarts", "Manage your account and board connection."],
   wled: ["WLED", "Lighting effects for your game."],
-  caller: ["Caller", "Voice announcements for scores and game events."],
   events: ["Events", "See what OcheCore receives from your board."],
 };
+const integrations = { wled: null };
 const labels = {
   unconfigured: "Not configured",
   disconnected: "Disconnected",
@@ -60,10 +60,13 @@ function navigate(focus = false) {
   const requested = location.hash.slice(1);
   if (requested === "main") return;
   page = Object.hasOwn(pages, requested) ? requested : "overview";
+  if (requested === "caller" || integrations[page] === false) {
+    page = "integrations";
+    history.replaceState(null, "", "#integrations");
+  }
   const [title, description] = pages[page];
-  const planned = page === "caller";
   document.querySelectorAll("[data-view]").forEach((view) => {
-    view.hidden = view.dataset.view !== (planned ? "planned" : page);
+    view.hidden = view.dataset.view !== page;
   });
   document.querySelectorAll("[data-page]").forEach((link) => {
     if (link.dataset.page === page) link.setAttribute("aria-current", "page");
@@ -71,12 +74,16 @@ function navigate(focus = false) {
   });
   $("page-title").textContent = title;
   $("page-description").textContent = description;
-  $("planned-title").textContent = title;
-  $("planned-description").textContent = description;
   document.title = `${title} · OcheCore`;
   if (focus) $("page-title").focus();
   eventRequest += 1;
   refreshEvents();
+}
+
+function setIntegrationEnabled(name, enabled) {
+  integrations[name] = enabled;
+  document.querySelector(`[data-integration="${name}"]`).hidden = !enabled;
+  if (page === name && !enabled) navigate(true);
 }
 
 function notice(message, error = false) {
@@ -183,7 +190,6 @@ function renderStatus() {
       : auth.state === "awaiting_authorization"
         ? "Approve the connection using the code below."
         : "Sign in on AutoDarts to connect your board.";
-  badge("integration-state", cloudLabel, connected ? "good" : "");
   const board = boardOptions.find((item) => item.id === config.board_id);
   $("board-name").textContent =
     board?.name || (config.board_id ? "Your AutoDarts board" : "Choose your board");
@@ -299,7 +305,6 @@ async function refreshData() {
     $("live").dataset.online = "false";
     $("auth-state").textContent = $("cloud-state").textContent = "Unavailable";
     badge("account-state", "Unavailable", "warning");
-    badge("integration-state", "Unavailable", "warning");
     badge("board-state", "Status unknown");
     $("match").textContent = "Waiting for the service to reconnect.";
     $("warning-text").textContent = "Cannot reach OcheCore. Retrying automatically.";

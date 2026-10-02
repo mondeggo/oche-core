@@ -286,6 +286,59 @@ def test_headless_api_config_probe_cli_and_restart(settings, capsys, tmp_path):
         assert restored["devices"][0]["targets"][0]["phases"]["takeout"]["color"] == "#ffff00"
 
 
+def test_integration_switch_preserves_devices_and_device_edits_preserve_switch(settings, capsys):
+    settings.ui_enabled = False
+    values = WLEDConfig(devices=[device(enabled=False)]).model_dump(mode="json")
+    with TestClient(create_app(settings)) as client:
+        assert client.put("/api/wled", json=values).status_code == 200
+        assert client.patch("/api/wled", json={"enabled": True}).status_code == 200
+        values["enabled"] = True
+        assert client.get("/api/wled").json() == values
+        assert client.get("/api/wled/status").json()["enabled"] is True
+
+        execute(parser().parse_args(["wled", "disable"]), client)
+        assert json.loads(capsys.readouterr().out)["saved"]
+        values["enabled"] = False
+        assert client.get("/api/wled").json() == values
+
+        # A settings form opened before disable must not re-enable automation when saved.
+        values["devices"][0]["name"] = "Updated controller"
+        assert client.patch("/api/wled", json={"devices": values["devices"]}).status_code == 200
+        assert client.get("/api/wled").json() == values
+        execute(parser().parse_args(["wled", "enable"]), client)
+        assert json.loads(capsys.readouterr().out)["saved"]
+        values["enabled"] = True
+
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/").status_code == 404
+        assert client.get("/api/wled").json() == values
+
+
+def test_wled_partial_updates_validate_and_keep_browser_guards(settings):
+    values = WLEDConfig(devices=[device(enabled=False)]).model_dump(mode="json")
+    with TestClient(create_app(settings)) as client:
+        assert client.put("/api/wled", json=values).status_code == 200
+        assert client.patch("/api/wled", json={}).status_code == 200
+        for invalid in (
+            {"enabled": None},
+            {"enabled": "invalid"},
+            {"devices": None},
+            {"devices": values["devices"] * 2},
+            {"unknown": True},
+        ):
+            assert client.patch("/api/wled", json=invalid).status_code == 422
+        assert client.patch("/api/wled", content='{"enabled":true}').status_code == 415
+        assert (
+            client.patch(
+                "/api/wled", json={"enabled": True}, headers={"Origin": "https://other.test"}
+            ).status_code
+            == 403
+        )
+        assert client.get("/api/wled").json() == values
+        assert client.patch("/api/wled", json={"devices": []}).status_code == 200
+        assert client.get("/api/wled").json() == {"enabled": False, "devices": []}
+
+
 def test_bad_saved_wled_configuration_does_not_stop_core(settings):
     (settings.data_dir / "wled.json").write_text("broken", encoding="utf-8")
     with TestClient(create_app(settings)) as client:

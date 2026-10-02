@@ -19,15 +19,11 @@
       </a>
       <nav aria-label="Main navigation">
         <a href="#overview" data-page="overview" aria-current="page">Overview</a>
+        <a href="#autodarts" data-page="autodarts">AutoDarts</a>
         <a href="#events" data-page="events">Events</a>
         <p class="nav-label">Integrations</p>
         <a href="#integrations" data-page="integrations">All integrations</a>
-        <a href="#autodarts" data-page="autodarts">AutoDarts</a>
-        <a href="#wled" data-page="wled">WLED</a>
-        <a href="#caller" data-page="caller">
-          Caller
-          <span class="nav-note">Planned</span>
-        </a>
+        <a href="#wled" data-page="wled" data-integration="wled" hidden>WLED</a>
       </nav>
       <div class="sidebar-footer">
         <div class="service-status">
@@ -36,13 +32,13 @@
         </div>
         <button
           id="theme-toggle"
-          class="theme-toggle"
+          class="switch theme-toggle"
           type="button"
           role="switch"
           aria-checked="true"
         >
           <span>Dark theme</span>
-          <span class="theme-track" aria-hidden="true"><span class="theme-thumb"></span></span>
+          <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
         </button>
       </div>
     </aside>
@@ -98,7 +94,7 @@
         <div class="panel compact-panel">
           <div>
             <h2>Make it your setup</h2>
-            <p class="muted">Manage AutoDarts and see what’s next for lights and audio.</p>
+            <p class="muted">Choose the lights and audio to use with your board.</p>
           </div>
           <a class="button" href="#integrations">Integrations</a>
         </div>
@@ -106,31 +102,56 @@
 
       <section data-view="integrations" aria-label="Integrations" hidden>
         <div class="panel integration-list">
-          <a class="integration-row" href="#autodarts">
-            <div>
-              <h2>AutoDarts</h2>
-              <p class="muted">Connect your account and receive board events.</p>
-            </div>
-            <span id="integration-state" class="badge">—</span>
-            <span aria-hidden="true">→</span>
-          </a>
-          <a class="integration-row" href="#wled">
-            <div>
+          <div class="integration-row">
+            <div class="integration-description">
               <h2>WLED</h2>
               <p class="muted">Phase colours, game effects and matrix scores.</p>
+              <p id="wled-integration-error" class="error" role="status" hidden></p>
             </div>
-            <span class="badge">Available</span>
-            <span aria-hidden="true">→</span>
-          </a>
-          <a class="integration-row" href="#caller">
-            <div>
+            <div class="integration-controls">
+              <a id="wled-settings" href="#wled" hidden>Settings</a>
+              <button
+                id="wled-toggle"
+                class="switch"
+                type="button"
+                role="switch"
+                aria-checked="false"
+                aria-label="Enable WLED"
+                disabled
+              >
+                <span id="wled-toggle-label">Loading…</span>
+                <span class="switch-track" aria-hidden="true">
+                  <span class="switch-thumb"></span>
+                </span>
+              </button>
+            </div>
+          </div>
+          <div class="integration-row">
+            <div class="integration-description">
               <h2>Caller</h2>
               <p class="muted">Voice announcements for scores and game events.</p>
             </div>
-            <span class="badge">Planned</span>
-            <span aria-hidden="true">→</span>
-          </a>
+            <div class="integration-controls">
+              <span class="badge">Planned</span>
+              <button
+                class="switch"
+                type="button"
+                role="switch"
+                aria-checked="false"
+                aria-label="Enable Caller (not available yet)"
+                disabled
+              >
+                <span>Off</span>
+                <span class="switch-track" aria-hidden="true">
+                  <span class="switch-thumb"></span>
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
+        <p class="hint">
+          Changes apply immediately. Turning an integration off keeps its saved settings.
+        </p>
       </section>
 
       <section data-view="autodarts" aria-label="AutoDarts settings" hidden>
@@ -209,10 +230,7 @@
         <form id="wled-form" class="panel">
           <div class="panel-heading">
             <h2>Devices and lighting</h2>
-            <label class="check-label">
-              <input type="checkbox" id="wled-enabled" />
-              Enable WLED
-            </label>
+            <a class="text-link" href="#integrations">Manage integration</a>
           </div>
           <p class="hint">
             Save settings to apply them. Lights keep working when this page is closed.
@@ -378,16 +396,6 @@
             </div>
           </details>
         </template>
-      </section>
-
-      <section data-view="planned" aria-label="Planned integration" hidden>
-        <div class="panel planned-panel">
-          <span class="badge">Planned</span>
-          <h2 id="planned-title"></h2>
-          <p id="planned-description" class="muted"></p>
-          <p class="hint">This integration is not implemented yet.</p>
-          <a class="button" href="#integrations">Back to integrations</a>
-        </div>
       </section>
 
       <section data-view="events" aria-label="Events" hidden>
