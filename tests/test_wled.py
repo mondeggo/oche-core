@@ -24,16 +24,268 @@ from ochecore.wled import (
     Appearance,
     Device,
     DeviceWorker,
+    DraftPreview,
     Matrix,
     Preview,
     WLEDConfig,
     discover_devices,
+    effect_colors,
     inspect_device,
     matrix_pixels,
     payload,
     request,
     validate_capabilities,
 )
+
+
+@pytest.mark.parametrize(
+    "metadata, expected",
+    [
+        ("!;!;;", ["Colour", None, None]),
+        ("!,!;;!;1", [None, None, None]),
+        ("!;,!;", [None, "Background", None]),
+        ("", ["Colour", "Background", "Accent"]),
+        (None, ["Colour", "Background", "Accent"]),
+    ],
+)
+def test_effect_color_controls_follow_device_metadata(metadata, expected):
+    assert effect_colors(metadata) == expected
+
+
+def test_unsaved_probe_and_cli_keep_configuration_unchanged(settings, capsys):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200, json=[";!;;", "!,!;;!;1"] if request.url.path == "/json/fxdata" else capabilities()
+        )
+
+    with TestClient(create_app(settings, transport=httpx.MockTransport(handler))) as client:
+        before = client.get("/api/wled").json()
+        result = client.post("/api/wled/probe", json={"url": "http://draft.test"})
+        assert result.status_code == 200
+        assert result.json()["effect_colors"][1] == [None, None, None]
+        assert all(r.method == "GET" and r.url.host == "draft.test" for r in requests)
+        assert client.get("/api/wled").json() == before
+        assert not (settings.data_dir / "wled.json").exists()
+        args = parser().parse_args(["wled", "probe", "--url", "http://draft.test"])
+        assert args.url == "http://127.0.0.1:9180"
+        execute(args, client)
+        assert json.loads(capsys.readouterr().out)["version"] == "0.15.3"
+        assert client.post("/api/wled/probe", json={"url": "file:///tmp"}).status_code == 422
+
+
+def preview_state():
+    state = capabilities()
+    state["state"]["seg"][0].update(on=True, bri=77, fx=1, col=[[4, 5, 6]], frz=False)
+    return state
+
+
+@pytest.mark.parametrize("mode", ["segment", "pixels", "matrix"])
+async def test_draft_preview_restores_and_does_not_save(tmp_path, mode):
+    sent = []
+    snapshot = preview_state()
+    snapshot["state"]["on"] = False
+    snapshot["state"]["seg"][0]["stop"] = snapshot["state"]["seg"][0]["len"] = 128
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=snapshot)
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"success": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        service = WLED(tmp_path / "wled.json", http, EventBus(), lambda: {})
+        draft_device = device(
+            enabled=False, targets=[{"id": "ring", "name": "Ring", "mode": mode, "enabled": False}]
+        )
+        draft_device.targets[0].phases.ready.color = "#123456"
+        draft_device.targets[0].matrix.appearance.color = "#abcdef"
+        result = await service.preview_draft(
+            DraftPreview(device=draft_device, target_id="ring", value=180, duration=0.5)
+        )
+        assert result["restored"]
+        assert sent[0]["on"] is True
+        assert sent[-1]["on"] is False and sent[-1]["seg"][0]["col"] == [[4, 5, 6]]
+        if mode == "segment":
+            assert sent[1]["seg"][0]["col"] == [[18, 52, 86]]
+        else:
+            assert "i" in sent[1]["seg"][0]
+        assert not service.path.exists() and service.config.devices == []
+
+
+async def test_draft_preview_restores_on_cancellation(tmp_path):
+    sent = []
+    applied = asyncio.Event()
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=preview_state())
+        sent.append(json.loads(request.content))
+        applied.set()
+        return httpx.Response(200, json={"success": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        service = WLED(tmp_path / "wled.json", http, EventBus(), lambda: {})
+        task = asyncio.create_task(
+            service.preview_draft(DraftPreview(device=device(), target_id="ring"))
+        )
+        await asyncio.wait_for(applied.wait(), 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert len(sent) == 2 and sent[-1]["seg"][0]["bri"] == 77
+
+
+async def test_lights_off_survives_game_events_and_configuration_updates(tmp_path):
+    state = preview_state()
+    sent = []
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=state)
+        body = json.loads(request.content)
+        sent.append(body)
+        if "on" in body:
+            state["state"]["on"] = body["on"]
+        return httpx.Response(200, json={"success": True})
+
+    bus = EventBus()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        service = WLED(
+            tmp_path / "wled.json", http, bus, lambda: {"phase": "ready", "available": True}
+        )
+        await service.configure(WLEDConfig(enabled=True, devices=[device()]))
+        try:
+            await until(lambda: bool(sent))
+            assert (await service.power(False))["applied"]
+            stored = service.path.read_bytes()
+            bus.publish("core", "match_win", {"player": {"is_local": True}}, kind="normalized")
+            await asyncio.sleep(0.35)
+            assert sent[-1] == {"on": False}
+            assert service.path.read_bytes() == stored
+            await service.configure(service.config)
+            await asyncio.sleep(0.35)
+            assert sent[-1] == {"on": False}
+            assert (await service.power(True, "board"))["applied"]
+            await until(lambda: "seg" in sent[-1])
+            assert sent[-1]["seg"][0]["col"] == [[0, 255, 0]]
+        finally:
+            await service.close()
+
+
+async def test_removing_a_target_clears_its_ready_color(tmp_path):
+    sent = []
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=capabilities())
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"success": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        service = WLED(
+            tmp_path / "wled.json", http, EventBus(), lambda: {"phase": "ready", "available": True}
+        )
+        config = WLEDConfig(
+            enabled=True,
+            devices=[
+                device(
+                    targets=[
+                        {"id": "ring", "name": "Ring"},
+                        {"id": "other", "name": "Other", "segment": 1},
+                    ]
+                )
+            ],
+        )
+        await service.configure(config)
+        try:
+            await until(lambda: bool(sent))
+            config.devices[0].targets.pop()
+            await service.configure(config)
+            assert any(
+                s.get("id") == 1 and s.get("col") == [[255, 0, 0]]
+                for body in sent
+                for s in body["seg"]
+            )
+            await until(lambda: len(sent[-1]["seg"]) == 1)
+        finally:
+            await service.close()
+
+
+def test_profiles_keep_independent_colors_shared_hardware_and_persist(settings, capsys):
+    settings.ui_enabled = False
+    with TestClient(create_app(settings)) as client:
+        initial = WLEDConfig(devices=[device()]).model_dump(mode="json")
+        assert client.put("/api/wled", json=initial).status_code == 200
+        execute(parser().parse_args(["wled", "profiles", "create", "Quiet"]), client)
+        quiet = json.loads(capsys.readouterr().out)["active_profile"]
+        current = client.get("/api/wled").json()
+        current["devices"][0]["url"] = "http://shared.test"
+        current["devices"][0]["targets"][0]["phases"]["ready"]["color"] = "#123456"
+        current["devices"][0]["targets"][0]["players"] = {
+            "1": {"color": "#abcdef", "name_filter": "Alice"}
+        }
+        assert client.patch("/api/wled", json={"devices": current["devices"]}).status_code == 200
+        execute(parser().parse_args(["wled", "profiles", "use", "Default"]), client)
+        capsys.readouterr()
+        current = client.get("/api/wled").json()
+        assert current["active_profile"] == "default"
+        assert current["devices"][0]["url"] == "http://shared.test"
+        assert current["devices"][0]["targets"][0]["phases"]["ready"]["color"] == "#00ff00"
+        assert current["devices"][0]["targets"][0]["players"] == {}
+        assert client.put("/api/wled/profile", json={"id": quiet}).status_code == 200
+        assert client.post("/api/wled/profiles", json={"name": "quiet"}).status_code == 409
+        assert client.put("/api/wled/profile", json={"id": "missing"}).status_code == 409
+    with TestClient(create_app(settings)) as client:
+        current = client.get("/api/wled").json()
+        assert current["active_profile"] == quiet
+        assert current["devices"][0]["targets"][0]["phases"]["ready"]["color"] == "#123456"
+        assert current["devices"][0]["targets"][0]["players"]["1"]["color"] == "#abcdef"
+        assert client.delete(f"/api/wled/profiles/{quiet}").status_code == 200
+        assert client.get("/api/wled").json()["active_profile"] == "default"
+        assert client.delete("/api/wled/profiles/default").status_code == 409
+
+
+def test_power_api_cli_and_failed_devices(settings, capsys):
+    sent = []
+
+    def handler(request):
+        if request.url.host == "offline.test":
+            raise httpx.ConnectError("offline")
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"success": True})
+
+    with TestClient(create_app(settings, transport=httpx.MockTransport(handler))) as client:
+        values = WLEDConfig(
+            devices=[device(), device(id="offline", url="http://offline.test")]
+        ).model_dump(mode="json")
+        client.put("/api/wled", json=values)
+        execute(parser().parse_args(["wled", "off", "board"]), client)
+        assert json.loads(capsys.readouterr().out)["applied"]
+        assert sent == [{"on": False}]
+        result = client.post("/api/wled/power", json={"on": False}).json()
+        assert not result["applied"] and [d["applied"] for d in result["devices"]] == [True, False]
+        assert client.post("/api/wled/board/power", json={"on": "false"}).status_code == 422
+        assert (
+            client.post(
+                "/api/wled/board/power",
+                json={"on": False},
+                headers={"Origin": "https://other.test"},
+            ).status_code
+            == 403
+        )
+        assert client.get("/api/wled").json()["devices"] == values["devices"]
+
+
+def test_partial_update_cannot_persist_a_missing_active_profile(settings):
+    with TestClient(create_app(settings)) as client:
+        client.post("/api/wled/profiles", json={"name": "Practice"})
+        client.delete("/api/wled/profiles/default")
+        before = client.get("/api/wled").json()
+        assert client.patch("/api/wled", json={"active_profile": "default"}).status_code == 422
+        assert client.get("/api/wled").json() == before
 
 
 def device(**updates):
@@ -71,6 +323,91 @@ def event(name, **data):
         event=name,
         data={"player": {"is_local": True}, **data},
     )
+
+
+@pytest.mark.parametrize(
+    "number, multiplier, name",
+    [
+        (20, 1, "single"),
+        (20, 2, "double"),
+        (20, 3, "triple"),
+        (25, 1, "outer_bull"),
+        (25, 2, "bull"),
+        (0, 0, "miss"),
+    ],
+)
+async def test_event_matrix_hit_rules_and_fallback_are_isolated(number, multiplier, name):
+    board = device(
+        targets=[
+            {"id": "ring", "name": "Ring", "effects": {name: {"color": "#123456"}}},
+            {
+                "id": "ambient",
+                "name": "Ambient",
+                "segment": 1,
+                "effects": {"throw": {"color": "#abcdef"}},
+            },
+            {"id": "white", "name": "White", "segment": 2, "effects": {}},
+        ]
+    )
+    async with httpx.AsyncClient() as http:
+        worker = DeviceWorker(board, http, EventBus(), lambda: {})
+        hit = event("throw", dart={"segment": {"number": number, "multiplier": multiplier}})
+        worker.accept(hit)
+        result = worker.desired({"phase": "ready", "available": True})["seg"]
+        assert result[0]["col"] == [[18, 52, 86]]
+        assert result[1]["col"] == [[171, 205, 239]]
+        assert result[2]["col"] == [[0, 255, 0]]
+        worker.overlays.clear()
+        hit.data["player"]["is_local"] = False
+        worker.accept(hit)
+        assert not worker.overlays
+        hit.data["player"]["is_local"] = True
+        hit.snapshot = True
+        worker.accept(hit)
+        assert not worker.overlays
+
+
+def test_player_colors_follow_ready_local_player_and_restore_after_takeout():
+    board = device(
+        targets=[
+            {
+                "id": "ring",
+                "name": "Ring",
+                "effects": {},
+                "players": {
+                    1: {"color": "#123456"},
+                    2: {"color": "#abcdef", "name_filter": "Alice"},
+                },
+            }
+        ]
+    )
+    view = {"phase": "ready", "player": {"index": 0, "name": "Bob", "is_local": True}}
+    assert payload(board, view, {})["seg"][0]["col"] == [[18, 52, 86]]
+    assert payload(board, {**view, "phase": "takeout"}, {})["seg"][0]["col"] == [[255, 255, 0]]
+    view["player"].update(index=3, name="ALICE Smith")
+    assert payload(board, view, {})["seg"][0]["col"] == [[171, 205, 239]]
+    view["player"]["is_local"] = False
+    assert payload(board, view, {})["seg"][0]["col"] == [[0, 255, 0]]
+    assert (
+        wled.preview_appearance(board.targets[0], Preview(target_id="ring", player=2)).color
+        == "#abcdef"
+    )
+    with pytest.raises(ValidationError):
+        Preview(target_id="ring", player=11)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["match_started", "match_ended", "manual_reset", "calibration_started", "calibration_finished"],
+)
+async def test_board_and_match_flow_events_do_not_require_a_player(name):
+    async with httpx.AsyncClient() as http:
+        board = device(
+            targets=[{"id": "ring", "name": "Ring", "effects": {name: {"color": "#123456"}}}]
+        )
+        worker = DeviceWorker(board, http, EventBus(), lambda: {})
+        worker.accept(event(name, player=None))
+        assert worker.overlays["ring"][2].color == "#123456"
 
 
 async def until(predicate):
@@ -252,7 +589,9 @@ def test_headless_api_config_probe_cli_and_restart(settings, capsys, tmp_path):
         return httpx.Response(200, json=capabilities())
 
     app = create_app(settings, transport=httpx.MockTransport(handler))
-    values = WLEDConfig(devices=[device()]).model_dump(mode="json")
+    config = WLEDConfig(devices=[device()])
+    WLED.sync_profiles(config)
+    values = config.model_dump(mode="json")
     with TestClient(app) as client:
         assert client.get("/").status_code == 404
         assert client.get("/api/game").json()["phase"] == "waiting"
@@ -288,7 +627,9 @@ def test_headless_api_config_probe_cli_and_restart(settings, capsys, tmp_path):
 
 def test_integration_switch_preserves_devices_and_device_edits_preserve_switch(settings, capsys):
     settings.ui_enabled = False
-    values = WLEDConfig(devices=[device(enabled=False)]).model_dump(mode="json")
+    config = WLEDConfig(devices=[device(enabled=False)])
+    WLED.sync_profiles(config)
+    values = config.model_dump(mode="json")
     with TestClient(create_app(settings)) as client:
         assert client.put("/api/wled", json=values).status_code == 200
         assert client.patch("/api/wled", json={"enabled": True}).status_code == 200
@@ -315,7 +656,9 @@ def test_integration_switch_preserves_devices_and_device_edits_preserve_switch(s
 
 
 def test_wled_partial_updates_validate_and_keep_browser_guards(settings):
-    values = WLEDConfig(devices=[device(enabled=False)]).model_dump(mode="json")
+    config = WLEDConfig(devices=[device(enabled=False)])
+    WLED.sync_profiles(config)
+    values = config.model_dump(mode="json")
     with TestClient(create_app(settings)) as client:
         assert client.put("/api/wled", json=values).status_code == 200
         assert client.patch("/api/wled", json={}).status_code == 200
@@ -336,7 +679,7 @@ def test_wled_partial_updates_validate_and_keep_browser_guards(settings):
         )
         assert client.get("/api/wled").json() == values
         assert client.patch("/api/wled", json={"devices": []}).status_code == 200
-        assert client.get("/api/wled").json() == {"enabled": False, "devices": []}
+        assert client.get("/api/wled").json() == WLEDConfig().model_dump(mode="json")
 
 
 def test_bad_saved_wled_configuration_does_not_stop_core(settings):
@@ -619,7 +962,7 @@ def test_discovery_api_cli_without_ui_or_enabling_lights(settings, monkeypatch, 
     with TestClient(create_app(settings)) as client:
         execute(parser().parse_args(["wled", "discover"]), client)
         assert json.loads(capsys.readouterr().out) == {"devices": found}
-        assert client.get("/api/wled").json() == {"enabled": False, "devices": []}
+        assert client.get("/api/wled").json() == WLEDConfig().model_dump(mode="json")
         assert not (settings.data_dir / "wled.json").exists()
         assert (
             client.post(

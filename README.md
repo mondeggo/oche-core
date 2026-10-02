@@ -196,7 +196,8 @@ component mapping notes for the Oche app. It is a reference file, not loaded by 
   below it in the sidebar; disabling them keeps their saved configuration. Changes through the
   CLI or another browser also update navigation.
 - **WLED** manages controllers, lighting targets, phase colours, game effects and matrix
-  scores. Saved targets have a timed test button; settings remain active when the page closes.
+  scores. Changes save automatically; named profiles keep different colours and effects.
+  Preview buttons sit beside the settings and work with unsaved changes.
 - **Caller** selects and installs voices, chooses host/browser output and tests announcements.
   Saving a voice downloads only that pack and removes the old cache once it is ready.
   See the [caller guide](docs/CALLER.md) for terminal controls and game-mode behavior.
@@ -210,11 +211,32 @@ Settings and login data are saved as JSON in `data/`; there is no database.
 Enable **WLED** in **All integrations**, then open its **Settings** or sidebar entry.
 Choose **Discover devices**, then **Add** next to a controller. Discovery shows verified
 controllers by name and address. CLI/API discovery also works while automation is disabled.
-Adding fills the form without saving or activating any lights. You can also use **Add device**
-to enter an HTTP address manually. Save the device and select **Check connection**.
-This loads its existing segments and available effects. Add a lighting target, choose its
-segment and mode, then save. **Test for 3 seconds** previews the target without
-a match and returns to the current game phase afterward.
+You can also use **Add device** to enter an HTTP address manually. **Check connection** uses
+the address currently in the form, including an unsaved address, and loads segments and effects.
+Valid edits save after a short pause; incomplete fields or failed saves keep the draft visible.
+The save indicator offers retry after errors. Add a target and choose its segment and mode.
+**Preview** beside a phase or game effect uses the current form for three seconds. Matrix
+settings have a score preview. Previews also work without a match or enabled automation.
+
+The core restores the previous segment settings and master power after a preview, then
+resumes enabled automation. Frozen pixel data cannot be read back through WLED's state API;
+previewing a new target on such a segment requires selecting a native effect in WLED first.
+Existing targets whose pixels OcheCore controls can be restored from their saved rules.
+Colour controls use the device's [effect metadata](https://kno.wled.ge/interfaces/json-api/#effect-metadata)
+to hide the primary colour when an effect does not use it. Older firmware keeps the colour
+control visible when metadata is unavailable.
+
+### Lighting profiles
+
+Use **Copy current profile** to create a named profile, then adjust its colours and effects.
+Selecting a profile applies it immediately. Profiles share device addresses, target geometry,
+and automation switches; each stores phase appearances, event effects, player colours and matrix appearance.
+Existing installations start with a **Default** profile. Settings persist in `data/wled.json`.
+Adding or removing a target updates all profiles; pixel and matrix targets use solid colours.
+
+**Lights off** controls master power and pauses automatic updates for that device. **Lights
+on** resumes its saved automation if enabled. Disabling the integration keeps the lights'
+waiting appearance; use **Lights off** when you want them dark.
 
 - **Whole segment**: independent colour, brightness and native WLED effect for each phase.
 - **LED range / individual LED**: choose a starting pixel and count; count `1` selects one LED.
@@ -222,15 +244,29 @@ a match and returns to the current game phase afterward.
   and row wiring. Corrections and silent reconnection snapshots update the displayed score.
 
 Defaults are green for confirmed ready, yellow for takeout, red for waiting and dim white
-when idle. Each target has optional triple, bull, 180, bust, leg-win and match-win effects.
-Match win has highest priority, followed by leg win, bust, 180, bull and triple. Corrections
-cancel temporary effects. Only local players trigger effects; snapshots never celebrate.
+when idle. The **Event matrix**, informed by AutoGlow 2's per-segment configuration, groups rules into:
 
-The core requires an online board, a healthy cloud connection and an explicit `Ready` or
-`Ready for throw` status to show green. A score update alone does not establish readiness.
+- **Match & victories:** leg and match wins.
+- **Hits & throws:** any dart, single, double, triple, outer bull, bullseye, miss, 180 and bust.
+- **Game flow & transitions:** match start/end, turn start, takeout start/end, manual reset,
+  and calibration start/end.
+- **Throw — players:** up to ten ready-to-throw appearances. Empty name filters match the
+  player's one-based match position; a name filter matches a case-insensitive substring instead.
+  The first enabled matching slot wins. Player colours apply only to local players while ready.
+
+The flow strip opens the relevant settings and highlights the current phase. Phase/player colours
+last while that state is active; event effects last for their configured duration (0.1–30 seconds).
+Match win has highest priority, followed by leg win, bust, 180, bullseye and other effects.
+A specific hit rule takes precedence over **Any dart** within each target. Corrections and new
+turns clear temporary effects. Player actions affect local players only; board and match lifecycle
+events do not require a player. Snapshots never celebrate. Every target keeps independent rules,
+so a white illumination segment can remain steady while an RGB ring reacts to hits.
+
+The core requires an online board, a healthy cloud connection and an explicit `Throw`, `Ready`
+or `Ready for throw` status to show green. A score update alone does not establish readiness.
 Unknown readiness shows red with a reason on the WLED page and `ochecore game`. These status
-names come from the supplied references; they still need checking against live AutoDarts v2
-gameplay. Connection loss clears scores and requests the waiting appearance on reachable lights.
+names include `Throw` confirmed in the October 2 live capture. Connection loss clears scores
+and requests the waiting appearance on reachable lights that have not been turned off.
 
 ### Terminal setup
 
@@ -242,10 +278,18 @@ segment `1`; remove the matrix target if you do not have one. Keep the service r
 uv run ochecore wled discover
 uv run ochecore wled config --file config/wled.example.json
 uv run ochecore wled probe board
+uv run ochecore wled probe --url http://wled.local
 uv run ochecore wled enable
 uv run ochecore wled test board --target ring --phase takeout
 uv run ochecore wled test board --target score --value 180
+uv run ochecore wled test board --target ring --event double
+uv run ochecore wled test board --target ring --player 1
 uv run ochecore wled status
+uv run ochecore wled off board
+uv run ochecore wled on board
+uv run ochecore wled profiles create Quiet
+uv run ochecore wled profiles use Default
+uv run ochecore wled profiles
 uv run ochecore game
 uv run ochecore wled disable board
 ```
@@ -273,9 +317,16 @@ sample score; WLED grouping, custom maps and 2D segment layouts require hardware
 Unknown or oversized numbers show dashes. Player names and scrolling messages are planned.
 
 Each controller has its own bounded event queue and timeout. Offline controllers retry without
-blocking AutoDarts or other lights; old effects are discarded. Disabling or reconfiguring makes
-a best-effort request for the waiting appearance and clears matrix scores before stopping.
+blocking AutoDarts or other lights; old effects are discarded. Disabling a controller or removing
+its targets requests the waiting appearance and clears matrix scores before stopping.
+Ordinary colour/profile changes apply without an intermediate waiting flash.
 It does not restore a previous WLED preset. A disconnected controller cannot receive that reset.
+
+`ochecore wled off` / `on` without a device ID controls all saved controllers, including
+disabled ones, and reports failures per device. To preview a device JSON definition without
+saving, use `ochecore wled test --file device.json --target ring --phase ready`. Add
+`--event bust` to preview a game effect. The file contains one device object from the config's
+`devices` list. `ochecore wled profiles delete Quiet` removes a profile; keep at least one.
 
 ### Device discovery
 
@@ -329,7 +380,14 @@ save. Old YAML/environment options for that adapter are also ignored. See the
 | `GET /api/wled/status` | Device connectivity, errors, capabilities and current phase |
 | `POST /api/wled/discover` | Find reachable WLED controllers via mDNS; body `{}`; does not save devices |
 | `POST /api/wled/{device_id}/probe` | Check controller capabilities; body `{}` |
-| `POST /api/wled/{device_id}/test` | Timed preview: `target_id`, `phase`, optional `value`, `duration` |
+| `POST /api/wled/probe` | Check an unsaved address; body `{"url":"http://wled.local"}` |
+| `POST /api/wled/preview` | Temporary unsaved test: `device`, `target_id`, optional `phase`, `event`, `player`, `value`, `duration`; responds after restoration |
+| `POST /api/wled/{device_id}/power` | Set master power with `{"on":false}` or `{"on":true}`; keeps saved rules |
+| `POST /api/wled/power` | Set master power on all saved devices; same body, per-device results |
+| `POST /api/wled/profiles` | Copy the current lighting profile; body `{"name":"Quiet"}` |
+| `PUT /api/wled/profile` | Select a profile; body `{"id":"default"}` |
+| `DELETE /api/wled/profiles/{profile_id}` | Remove a profile; the last profile is retained |
+| `POST /api/wled/{device_id}/test` | Timed preview: `target_id`, optional `phase`, `event`, `player`, `value`, `duration` |
 | `GET /api/config`, `PUT /api/config` | Public connection settings |
 | `GET /api/boards` | Account boards and current selection; requires login |
 | `POST /api/auth/login` | Start device authorization |

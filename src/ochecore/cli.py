@@ -18,7 +18,7 @@ from websockets.sync.client import connect
 from ochecore import __version__
 from ochecore.caller import CallerConfig
 from ochecore.config import Settings
-from ochecore.wled import WLEDConfig
+from ochecore.wled import EffectName, WLEDConfig
 
 
 class ControlError(Exception):
@@ -85,18 +85,39 @@ def parser() -> argparse.ArgumentParser:
     actions = wled.add_subparsers(dest="wled_command", required=True)
     actions.add_parser("status", help="Show devices, errors and current game phase.")
     actions.add_parser("discover", help="Find reachable WLED controllers on the service's network.")
+    profiles = actions.add_parser(
+        "profiles", help="List, copy, select or remove lighting profiles."
+    )
+    profile_actions = profiles.add_subparsers(dest="profile_command")
+    profile_actions.add_parser("list")
+    profile_actions.add_parser("create").add_argument("name")
+    profile_actions.add_parser("use").add_argument("profile")
+    profile_actions.add_parser("delete").add_argument("profile")
     settings = actions.add_parser("config", help="Show configuration or load a JSON file.")
     settings.add_argument("--file", type=Path)
-    probe = actions.add_parser("probe", help="Check a saved controller and its segments.")
-    probe.add_argument("device")
-    preview = actions.add_parser("test", help="Temporarily preview a saved lighting target.")
-    preview.add_argument("device")
+    probe = actions.add_parser("probe", help="Check a saved controller or an unsaved address.")
+    probe.add_argument("device", nargs="?")
+    probe.add_argument("--url", dest="device_url", help="Check an address without saving it.")
+    preview = actions.add_parser(
+        "test", help="Temporarily preview a saved or draft lighting target."
+    )
+    preview.add_argument("device", nargs="?")
+    preview.add_argument(
+        "--file", type=Path, help="JSON device definition to preview without saving."
+    )
     preview.add_argument("--target", required=True)
     preview.add_argument(
         "--phase", choices=["idle", "ready", "takeout", "waiting"], default="ready"
     )
     preview.add_argument("--value", type=int, help="Sample matrix score.")
     preview.add_argument("--duration", type=float, default=3)
+    preview.add_argument("--event", choices=EffectName.__args__)
+    preview.add_argument(
+        "--player", type=int, choices=range(1, 11), help="Preview a player colour."
+    )
+    for name in ("on", "off"):
+        power = actions.add_parser(name, help=f"Turn lights {name} without changing saved rules.")
+        power.add_argument("device", nargs="?", help="Saved device ID; omit for all devices.")
     for name in ("enable", "disable"):
         command = actions.add_parser(name, help=f"{name.capitalize()} WLED or a saved device.")
         command.add_argument("device", nargs="?")
@@ -237,6 +258,62 @@ def execute_wled(args, client) -> None:
         print_json(request(client, "GET", "/api/wled/status"))
     elif command == "discover":
         print_json(request(client, "POST", "/api/wled/discover"))
+    elif command == "profiles":
+        config = request(client, "GET", "/api/wled")
+        action = args.profile_command
+        if action in {None, "list"}:
+            print_json(
+                {
+                    "active_profile": config["active_profile"],
+                    "profiles": [{"id": p["id"], "name": p["name"]} for p in config["profiles"]],
+                }
+            )
+        elif action == "create":
+            print_json(request(client, "POST", "/api/wled/profiles", {"name": args.name}))
+        else:
+            profile = next(
+                (p for p in config["profiles"] if args.profile in {p["id"], p["name"]}), None
+            )
+            if profile is None:
+                raise ControlError("Unknown lighting profile. Use 'wled profiles' to list them.")
+            print_json(
+                request(client, "PUT", "/api/wled/profile", {"id": profile["id"]})
+                if action == "use"
+                else request(client, "DELETE", f"/api/wled/profiles/{profile['id']}")
+            )
+    elif command in {"on", "off"}:
+        path = f"/api/wled/{args.device}/power" if args.device else "/api/wled/power"
+        result = request(client, "POST", path, {"on": command == "on"})
+        print_json(result)
+        if not result["applied"]:
+            raise ControlError("Some WLED devices could not be reached. See the device results.")
+    elif command == "probe" and args.device_url:
+        if args.device:
+            raise ControlError("Choose a saved device or --url, not both.")
+        print_json(request(client, "POST", "/api/wled/probe", {"url": args.device_url}))
+    elif command == "test" and args.file:
+        if args.device:
+            raise ControlError("Choose a saved device or --file, not both.")
+        try:
+            device = json.loads(args.file.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as exc:
+            raise ControlError("Cannot load the device JSON file.") from exc
+        print_json(
+            request(
+                client,
+                "POST",
+                "/api/wled/preview",
+                {
+                    "device": device,
+                    "target_id": args.target,
+                    "phase": args.phase,
+                    "event": args.event,
+                    "player": args.player,
+                    "value": args.value,
+                    "duration": args.duration,
+                },
+            )
+        )
     elif command == "config":
         if args.file:
             try:
@@ -270,6 +347,8 @@ def execute_wled(args, client) -> None:
             else {
                 "target_id": args.target,
                 "phase": args.phase,
+                "event": args.event,
+                "player": args.player,
                 "value": args.value,
                 "duration": args.duration,
             }
@@ -331,7 +410,7 @@ def run(argv=None) -> int:
             uvicorn.run(create_app(settings), host=settings.host, port=settings.port)
             return 0
         with httpx.Client(
-            base_url=args.url, timeout=10, follow_redirects=False, trust_env=False
+            base_url=args.url, timeout=30, follow_redirects=False, trust_env=False
         ) as client:
             return execute(args, client)
     except ControlError as exc:

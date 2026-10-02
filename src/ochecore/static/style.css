@@ -735,16 +735,56 @@ input[type="color"] {
 .wled-target > summary {
   font-size: 15px;
 }
+.wled-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.wled-flow button {
+  font-size: 12px;
+}
+.wled-flow button[aria-current="step"] {
+  background: var(--selected);
+  color: var(--selected-text);
+  border-color: var(--accent);
+}
 .wled-appearance {
-  display: grid;
-  grid-template-columns: minmax(110px, 1.5fr) repeat(4, minmax(70px, 1fr));
-  gap: 10px;
-  align-items: center;
-  padding-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
 }
 .wled-appearance label {
   margin: 0;
   font-size: 12px;
+  flex: 0 0 72px;
+  min-width: 0;
+}
+.wled-appearance > span,
+.wled-appearance > label:first-child {
+  flex: 1 1 125px;
+  font-weight: 500;
+  align-self: center;
+}
+.wled-appearance > label:first-child:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wled-appearance [data-native-effect] {
+  flex: 2 1 135px;
+}
+.wled-appearance label:has([data-value="name_filter"]) {
+  flex: 2 1 150px;
+}
+.wled-appearance [data-colour-control] {
+  flex: 0 0 64px;
+}
+.wled-appearance button {
+  flex: 0 0 auto;
 }
 .wled-appearance > span {
   font-size: 13px;
@@ -756,15 +796,13 @@ input[type="color"] {
 #wled-device-status:empty {
   display: none;
 }
-@media (max-width: 1000px) {
-  .wled-appearance {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding: 14px 0;
-    border-bottom: 1px solid var(--border);
-  }
+@media (max-width: 800px) {
   .wled-appearance > span,
   .wled-appearance > label:first-child {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
+  }
+  .wled-appearance [data-native-effect] {
+    flex-basis: 100%;
   }
 }
 @media (max-width: 480px) {

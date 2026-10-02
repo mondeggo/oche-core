@@ -285,14 +285,42 @@
           <div id="wled-device-status" class="hint" role="status"></div>
           <p id="wled-error" class="error" role="status" hidden></p>
         </div>
+        <div class="panel">
+          <h2>Lighting profile</h2>
+          <label for="wled-profile">Active profile</label>
+          <div class="field-row">
+            <select id="wled-profile" disabled></select>
+            <button id="wled-profile-delete" type="button" disabled>
+              Remove profile
+            </button>
+          </div>
+          <p class="hint">
+            Profiles share your devices and targets. Each keeps its own phase
+            colours, event effects, player colours and matrix colour.
+          </p>
+          <details class="advanced">
+            <summary>Create a profile</summary>
+            <label for="wled-profile-name">Name</label>
+            <div class="field-row">
+              <input
+                id="wled-profile-name"
+                maxlength="60"
+                placeholder="Practice or match night"
+              />
+              <button id="wled-profile-create" type="button" disabled>
+                Copy current profile
+              </button>
+            </div>
+          </details>
+        </div>
         <form id="wled-form" class="panel">
           <div class="panel-heading">
             <h2>Devices and lighting</h2>
             <a class="text-link" href="#integrations">Manage integration</a>
           </div>
           <p class="hint">
-            Save settings to apply them. Lights keep working when this page is
-            closed.
+            Changes save automatically. Preview a phase or effect beside its
+            settings.
           </p>
           <div class="actions">
             <button id="wled-discover" type="button" disabled>
@@ -333,9 +361,11 @@
             <div class="actions">
               <label class="check-label">
                 <input id="wled-device-enabled" type="checkbox" />
-                Enable device
+                Automatic lighting
               </label>
               <button id="wled-probe" type="button">Check connection</button>
+              <button id="wled-power-on" type="button">Lights on</button>
+              <button id="wled-power-off" type="button">Lights off</button>
               <button id="wled-remove-device" type="button">
                 Remove device
               </button>
@@ -353,13 +383,13 @@
             <div id="wled-targets"></div>
           </div>
           <div class="actions">
-            <button id="wled-save" class="primary" type="submit" disabled>
-              Save settings
+            <span id="wled-save-state" class="hint" role="status"
+              >All changes saved</span
+            >
+            <button id="wled-retry" type="button" hidden>Retry</button>
+            <button id="wled-reload" type="button" hidden>
+              Discard changes
             </button>
-            <button id="wled-reload" type="button">
-              Reload saved settings
-            </button>
-            <span id="wled-unsaved" class="hint" hidden>Unsaved changes</span>
           </div>
         </form>
         <template id="wled-target-template">
@@ -475,43 +505,65 @@
               </div>
               <p class="hint">
                 Numeric display, up to 512 pixels. Unknown or oversized scores
-                show dashes. Keep the WLED master power on and brightness above
-                zero.
+                show dashes.
               </p>
+              <div class="actions" data-test-score>
+                <label>
+                  Preview score
+                  <input
+                    data-test-value
+                    type="number"
+                    min="0"
+                    max="9999"
+                    value="180"
+                  />
+                </label>
+                <button data-test type="button">Preview score</button>
+              </div>
             </div>
+            <h3>Event matrix</h3>
+            <p class="hint">
+              Rules apply only to this target in the selected profile.
+            </p>
+            <nav class="wled-flow" data-flow aria-label="Lighting flow">
+              <button type="button" data-flow-step="idle">Idle</button>
+              <button type="button" data-flow-step="ready">
+                Ready to throw
+              </button>
+              <button type="button" data-flow-step="hits">Hit</button>
+              <button type="button" data-flow-step="takeout">
+                Remove darts
+              </button>
+              <button type="button" data-flow-step="waiting">
+                Wait / next player
+              </button>
+              <button type="button" data-flow-step="victories">Victory</button>
+            </nav>
             <details data-phases class="advanced" open>
               <summary>Phase colours</summary>
+              <p class="hint">
+                Preview uses the current settings for 3 seconds, then restores
+                the lights.
+              </p>
               <div data-phase-rows></div>
             </details>
-            <details class="advanced">
-              <summary>Game effects</summary>
+            <p class="hint">
+              Enable an event to give it a temporary effect. Local hits and wins
+              only; victory takes priority. The current phase returns when the
+              effect ends.
+            </p>
+            <div data-effect-rows></div>
+            <details data-player-rules class="advanced">
+              <summary>Throw — players</summary>
               <p class="hint">
-                Local players only. A win takes priority; the current phase
-                returns when the effect ends.
+                Override ready-to-throw colours for local players. An empty name
+                uses the player's match position; a name matches any player
+                containing that text. The first enabled match wins. These
+                colours last while the board is ready.
               </p>
-              <div data-effect-rows></div>
+              <div data-player-rows></div>
             </details>
             <div class="actions">
-              <label>
-                Test phase
-                <select data-test-phase>
-                  <option value="ready">Ready / green</option>
-                  <option value="takeout">Takeout / yellow</option>
-                  <option value="waiting">Wait / red</option>
-                  <option value="idle">Idle</option>
-                </select>
-              </label>
-              <label data-test-score hidden>
-                Test score
-                <input
-                  data-test-value
-                  type="number"
-                  min="0"
-                  max="9999"
-                  value="180"
-                />
-              </label>
-              <button data-test type="button">Test for 3 seconds</button>
               <button data-remove type="button">Remove target</button>
             </div>
           </details>

@@ -1,7 +1,27 @@
 # Connection, events and integration validation
 
-Updated October 2, 2026 after adding debug recording and selected-voice caching. Terminal controls and the optional
-UI share the same headless service.
+Updated October 2, 2026. Terminal controls and the optional UI share the same headless service.
+
+## WLED event matrix and live capture
+
+The latest checks cover automatic saves, named lighting profiles, independent target/event/player
+colours, temporary draft previews with restoration, effect colour metadata, and master power through
+API and CLI. Tests check that lights remain off during game events and configuration updates, and
+that removing a target clears its ready indication. Invalid profile updates cannot corrupt saved settings.
+
+Temporary DOM checks cover edits during saves, failed-save retry, focus preservation, profile switching,
+player rules, unsaved address probes, previews and power controls. Browser review checked the dark UI,
+grouped event rows, flow navigation and a 390-pixel viewport without horizontal overflow.
+UI assets now require cache revalidation after updates.
+
+The 490-frame live capture contains X01 and Cricket. Replay exposed Go's zero `finishedAt` timestamp
+and the live `Throw` readiness status; both now have reduced, anonymized regression fixtures.
+Board reset and calibration events emit once despite paired state/event envelopes. The unused
+`autodarts.users` subscription was removed; the restarted cloud connection reports no subscription errors.
+
+The Python distribution and Docker image build successfully. The native development server listens
+on `0.0.0.0:9180`. New lighting behavior has automated coverage; hardware acceptance remains pending.
+Earlier sections below record validation at the time each feature was introduced.
 
 ## Debug recording and voice cache
 
@@ -257,21 +277,18 @@ development Client ID, `darts-caller`.
 After the route refactor and Docker rebuild on October 2, the service restored authentication
 and reconnected to the selected board's cloud stream without another login.
 
-The raw stream exposed an `unauthorized client` response for `autodarts.users` with the
-development Client ID. Status now lists that optional subscription failure instead of
-counting it as malformed input. No board-topic rejection was observed; full game delivery
-still needs live acceptance. Both event history endpoints and the host/container CLI were
-checked against the rebuilt service.
+The raw stream exposed an `unauthorized client` response for the unused `autodarts.users`
+subscription with the development Client ID. That subscription has now been removed.
+No board-topic rejection was observed. Both event history endpoints and the host/container
+CLI were checked against the earlier rebuilt service.
 
 ## Remaining verification
 
-- Gameplay acceptance: verify throw payloads, corrections, match changes and recovery during
-  a real match. Receiving initial cloud events does not establish complete gameplay coverage.
-  The prior match-state endpoint returned 404 during this change; current normalization
-  coverage is based on reference contracts and replay fixtures. See [event evidence](EVENTS.md).
+- Hardware acceptance: verify WLED profiles, previews, takeout transitions and power controls
+  during a real match. X01/Cricket replay does not establish live coverage for every game mode.
+  See [event evidence](EVENTS.md).
 - Repeat authentication with an OAuth Client ID assigned to OcheCore before distribution.
-- Rebuild Docker and review the redesigned interface in a browser, including a narrow viewport.
-  The earlier browser attempt denied localhost access; the latest attempt found no browser.
+- Caller browser rendering and physical speaker playback remain to be verified.
 - ARM/Raspberry Pi: Docker was tested on Linux amd64 through Docker Desktop.
 - Long-running sessions: HTTP refresh and WebSocket recovery are tested separately.
   Real acceptance should include a match beyond 15 minutes and an application restart.

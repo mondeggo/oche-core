@@ -3,12 +3,21 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import ValidationError
 
 from ochecore import __version__
 from ochecore.caller import CallerConfig, CallerTest
 from ochecore.config import ConnectionConfig
 from ochecore.events import DebugRecording, Event
-from ochecore.wled import Preview, WLEDConfig
+from ochecore.wled import (
+    DeviceAddress,
+    DraftPreview,
+    Power,
+    Preview,
+    ProfileName,
+    ProfileSelection,
+    WLEDConfig,
+)
 
 
 def same_origin(origin: str | None, host: str, scheme: str) -> bool:
@@ -75,6 +84,10 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
                 updated = runtime.wled.config.model_copy(
                     update={key: getattr(config, key) for key in config.model_fields_set}
                 )
+                try:
+                    updated = WLEDConfig.model_validate(updated.model_dump())
+                except ValidationError as exc:
+                    raise HTTPException(422, exc.errors()[0]["msg"]) from exc
                 await runtime.wled.configure(updated)
         return {"saved": True}
 
@@ -82,11 +95,46 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
     async def wled_status(request: Request):
         return request.app.state.runtime.wled.status()
 
+    @router.post("/api/wled/profiles")
+    async def wled_create_profile(profile: ProfileName, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            return await runtime.wled.create_profile(profile.name)
+
+    @router.put("/api/wled/profile")
+    async def wled_select_profile(profile: ProfileSelection, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            return await runtime.wled.select_profile(profile.id)
+
+    @router.delete("/api/wled/profiles/{profile_id}")
+    async def wled_delete_profile(profile_id: str, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            return await runtime.wled.delete_profile(profile_id)
+
     @router.post("/api/wled/{device_id}/probe")
     async def wled_probe(device_id: str, request: Request):
         runtime = request.app.state.runtime
         async with runtime.lock:
             return await runtime.wled.probe(device_id)
+
+    @router.post("/api/wled/probe")
+    async def wled_probe_address(address: DeviceAddress, request: Request):
+        return await request.app.state.runtime.wled.probe_address(address)
+
+    @router.post("/api/wled/preview")
+    async def wled_preview(draft: DraftPreview, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            return await runtime.wled.preview_draft(draft)
+
+    @router.post("/api/wled/power")
+    @router.post("/api/wled/{device_id}/power")
+    async def wled_power(power: Power, request: Request, device_id: str | None = None):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            return await runtime.wled.power(power.on, device_id)
 
     @router.post("/api/wled/discover")
     async def wled_discover(request: Request):

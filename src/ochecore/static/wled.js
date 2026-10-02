@@ -8,26 +8,68 @@
   let latestStatus = null;
   let statusError = "";
   let discovered = [];
+  let saveTimer = null;
+  let saveError = "";
+  let saving = null;
+  let editRevision = 0;
+  const capabilities = new Map();
   const phases = {
     ready: "Ready to throw",
     takeout: "Remove darts",
     waiting: "Wait",
     idle: "Idle",
   };
-  const effects = {
-    triple: "Triple",
-    bull: "Bull",
-    score_180: "180",
-    bust: "Bust",
-    leg_win: "Leg win",
-    match_win: "Match win",
-  };
+  const effectGroups = [
+    {
+      id: "victories",
+      title: "Match & victories",
+      effects: {
+        leg_win: "Leg won",
+        match_win: "Match won",
+      },
+    },
+    {
+      id: "hits",
+      title: "Hits & throws",
+      effects: {
+        throw: "Any dart",
+        single: "Single",
+        double: "Double",
+        triple: "Triple",
+        outer_bull: "Outer bull (25)",
+        bull: "Bullseye (50)",
+        miss: "Miss",
+        score_180: "180",
+        bust: "Bust",
+      },
+    },
+    {
+      id: "transitions",
+      title: "Game flow & transitions",
+      effects: {
+        match_started: "Match started",
+        match_ended: "Match ended",
+        turn_started: "Turn started",
+        takeout_started: "Takeout started",
+        takeout_finished: "Takeout finished",
+        manual_reset: "Manual reset",
+        calibration_started: "Calibration started",
+        calibration_finished: "Calibration finished",
+      },
+    },
+  ];
   const form = $("wled-form");
   const field = (root, name) => root.querySelector(`[data-field="${name}"]`);
-  const matrixField = (root, name) => root.querySelector(`[data-matrix-field="${name}"]`);
-  const device = () => configuration?.devices.find((item) => item.id === selected);
+  const matrixField = (root, name) =>
+    root.querySelector(`[data-matrix-field="${name}"]`);
+  const device = () =>
+    configuration?.devices.find((item) => item.id === selected);
   const identity = (prefix) => `${prefix}-${Date.now().toString(36)}`;
-  const appearance = (color = "#ffffff") => ({ color, brightness: 128, effect: 0 });
+  const appearance = (color = "#ffffff") => ({
+    color,
+    brightness: 128,
+    effect: 0,
+  });
   const newTarget = () => ({
     id: identity("target"),
     name: "Lighting target",
@@ -48,6 +90,7 @@
       leg_win: { ...appearance("#00aaff"), duration: 2 },
       match_win: { ...appearance("#a000ff"), duration: 4 },
     },
+    players: {},
     matrix: {
       width: 16,
       height: 8,
@@ -75,25 +118,34 @@
       });
       return;
     }
-    $("wled-save").disabled = working || !configuration || !changed;
-    $("wled-unsaved").hidden = !changed;
+    $("wled-save-state").textContent =
+      saveError ||
+      (saving ? "Saving…" : changed ? "Waiting to save…" : "All changes saved");
+    $("wled-save-state").classList.toggle("error", !!saveError);
+    $("wled-retry").hidden = !saveError;
+    $("wled-reload").hidden = !changed;
+    $("wled-profile").disabled = !configuration || changed;
+    $("wled-profile-create").disabled =
+      !configuration || changed || configuration.profiles.length >= 12;
+    $("wled-profile-delete").disabled =
+      !configuration || changed || configuration.profiles.length <= 1;
     $("wled-device").disabled = working || changed;
     $("wled-reload").disabled = working;
-    $("wled-probe").disabled = working || changed || !device();
-    form.querySelectorAll("[data-test]").forEach((button) => {
-      const root = button.closest("[data-target]");
-      button.disabled =
-        working ||
-        changed ||
-        !configuration?.enabled ||
-        !device()?.enabled ||
-        !field(root, "enabled").checked;
-    });
+    $("wled-probe").disabled = working || !device();
+    const saved = latestStatus?.devices.find(
+      (item) =>
+        item.id === selected &&
+        origin(item.url) === origin($("wled-url").value.trim()),
+    );
+    $("wled-power-on").disabled = $("wled-power-off").disabled = !saved;
+    form.querySelectorAll("[data-rule]").forEach(updateAppearance);
     $("wled-add-device").disabled = working || !configuration;
     $("wled-discover").disabled = !configuration;
     $("wled-add-device").disabled ||= configuration?.devices.length >= 8;
     form.querySelectorAll("[data-add-found]").forEach((button) => {
-      const added = alreadyConfigured(discovered[Number(button.dataset.addFound)]);
+      const added = alreadyConfigured(
+        discovered[Number(button.dataset.addFound)],
+      );
       button.disabled = added || configuration.devices.length >= 8;
       button.textContent = added ? "Added" : "Add";
     });
@@ -102,7 +154,58 @@
 
   function markChanged() {
     changed = true;
+    editRevision += 1;
+    saveError = "";
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveDraft, 500);
     buttons();
+  }
+
+  function saveDraft() {
+    if (!changed || working || saving) return;
+    if (!form.checkValidity()) {
+      saveError = "Complete the highlighted settings to save automatically.";
+      buttons();
+      return;
+    }
+    collect();
+    const devices = structuredClone(configuration.devices);
+    const revision = editRevision;
+    saving = (async () => {
+      try {
+        await api("/api/wled", "PATCH", { devices });
+        const saved = await api("/api/wled");
+        configuration.profiles = saved.profiles;
+        configuration.active_profile = saved.active_profile;
+        changed = revision !== editRevision;
+        saveError = "";
+        renderProfiles();
+        for (const option of $("wled-device").options) {
+          const item = configuration.devices.find(
+            (device) => device.id === option.value,
+          );
+          if (item) option.textContent = item.name;
+        }
+      } catch (error) {
+        if (revision === editRevision)
+          saveError = `Not saved: ${error.message}`;
+      } finally {
+        saving = null;
+        buttons();
+        if (changed && !saveError && !working)
+          saveTimer = setTimeout(saveDraft, 500);
+      }
+    })();
+    buttons();
+    return saving;
+  }
+
+  function renderProfiles() {
+    const select = $("wled-profile");
+    select.replaceChildren(
+      ...configuration.profiles.map((item) => new Option(item.name, item.id)),
+    );
+    select.value = configuration.active_profile;
   }
 
   function origin(url) {
@@ -113,6 +216,14 @@
     }
   }
 
+  function deviceInfo() {
+    const address = origin($("wled-url").value.trim());
+    return (
+      capabilities.get(address) ||
+      latestStatus?.devices.find((item) => origin(item.url) === address)?.info
+    );
+  }
+
   function alreadyConfigured(found) {
     const address = new URL(found.url);
     const origins = [address.origin];
@@ -120,13 +231,21 @@
       address.hostname = found.hostname;
       origins.push(address.origin);
     }
-    return configuration.devices.some((item) => origins.includes(origin(item.url)));
+    return configuration.devices.some((item) =>
+      origins.includes(origin(item.url)),
+    );
   }
 
   function addDevice(name, url) {
     if (!configuration || configuration.devices.length >= 8) return;
     collect();
-    const added = { id: identity("device"), name, url, enabled: true, targets: [] };
+    const added = {
+      id: identity("device"),
+      name,
+      url,
+      enabled: true,
+      targets: [],
+    };
     configuration.devices.push(added);
     selected = added.id;
     markChanged();
@@ -158,7 +277,9 @@
           return;
         }
         addDevice(found.name, found.url);
-        notice("Device added to the form. Choose its lighting targets, then save settings.");
+        notice(
+          "Device added. Choose its lighting targets; changes save automatically.",
+        );
       });
       row.append(description, add);
       list.append(row);
@@ -186,29 +307,34 @@
     return element;
   }
 
-  function appearanceRow(key, title, value, isEffect, mode) {
+  function appearanceRow(key, title, value, isEffect, mode, isPlayer = false) {
     const row = document.createElement("div");
     row.className = "wled-appearance";
     row.dataset.rule = key;
     const name = document.createElement("span");
     name.textContent = title;
-    if (isEffect) row.append(label(title, input("checkbox", Boolean(value), "enabled")));
+    if (isEffect)
+      row.append(label(title, input("checkbox", Boolean(value), "enabled")));
     else row.append(name);
     const settings = value || { ...appearance(), duration: 2 };
-    row.append(label("Colour", input("color", settings.color, "color")));
-    row.append(label("Brightness", input("number", settings.brightness, "brightness", 0, 255)));
-    if (isEffect) {
-      const duration = input("number", settings.duration, "duration", 0.1, 30);
-      duration.step = "0.1";
-      row.append(label("Seconds", duration));
+    if (isPlayer) {
+      row.dataset.playerSlot = key;
+      const filter = input("text", settings.name_filter || "", "name_filter");
+      filter.maxLength = 80;
+      filter.placeholder = `Player ${key} by position`;
+      row.append(label("Name contains (optional)", filter));
     }
     const select = document.createElement("select");
     select.dataset.value = "effect";
-    const info = latestStatus?.devices.find((item) => item.id === selected)?.info;
+    const info = deviceInfo();
     (info?.effects || ["Solid"]).forEach((name, index) => {
       if (!["-", "RSVD"].includes(name)) select.add(new Option(name, index));
     });
-    if (![...select.options].some((item) => Number(item.value) === settings.effect)) {
+    if (
+      ![...select.options].some(
+        (item) => Number(item.value) === settings.effect,
+      )
+    ) {
       select.add(new Option(`Effect ${settings.effect}`, settings.effect));
     }
     select.value = settings.effect;
@@ -216,7 +342,79 @@
     effectLabel.dataset.nativeEffect = "";
     effectLabel.hidden = mode !== "segment";
     row.append(effectLabel);
+    const colour = label("Colour", input("color", settings.color, "color"));
+    colour.dataset.colourControl = "";
+    row.append(colour);
+    row.append(
+      label(
+        "Brightness",
+        input("number", settings.brightness, "brightness", 0, 255),
+      ),
+    );
+    if (isEffect && !isPlayer) {
+      const duration = input("number", settings.duration, "duration", 0.1, 30);
+      duration.step = "0.1";
+      row.append(label("Seconds", duration));
+    }
+    const preview = document.createElement("button");
+    preview.type = "button";
+    preview.textContent = "Preview";
+    preview.dataset.preview = key;
+    preview.setAttribute("aria-label", `Preview ${title.toLowerCase()}`);
+    preview.addEventListener("click", () =>
+      previewTarget(row.closest("[data-target]"), key, isEffect, isPlayer),
+    );
+    row.append(preview);
+    select.addEventListener("change", () => updateAppearance(row));
+    row
+      .querySelector('[data-value="enabled"]')
+      ?.addEventListener("change", () => updateAppearance(row));
     return row;
+  }
+
+  function updateAppearance(row) {
+    const enabled = row.querySelector('[data-value="enabled"]');
+    const active = !enabled || enabled.checked;
+    const root = row.closest("[data-target]");
+    const native = field(root, "mode").value === "segment";
+    const effect = Number(row.querySelector('[data-value="effect"]').value);
+    const slots = deviceInfo()?.effect_colors?.[effect];
+    row.querySelector("[data-colour-control]").hidden =
+      native && slots && !slots[0];
+    row.querySelectorAll("input, select, button").forEach((control) => {
+      control.disabled = working || (!active && control !== enabled);
+    });
+  }
+
+  function previewTarget(
+    root,
+    rule = "ready",
+    isEffect = false,
+    isPlayer = false,
+  ) {
+    if (!form.reportValidity()) return;
+    collect();
+    const current = structuredClone(device());
+    const target = current.targets.find(
+      (item) => item.id === root.dataset.target,
+    );
+    const draft = {
+      device: current,
+      target_id: target.id,
+      phase: isEffect ? "ready" : rule,
+      event: isEffect && !isPlayer ? rule : null,
+      player: isPlayer ? Number(rule) : null,
+      value:
+        target.mode === "matrix"
+          ? Number(root.querySelector("[data-test-value]").value)
+          : null,
+      duration: 3,
+    };
+    work(async () => {
+      notice("Previewing for 3 seconds…");
+      await api("/api/wled/preview", "POST", draft);
+      notice("Preview complete. Previous lighting restored.");
+    });
   }
 
   function targetMode(root) {
@@ -225,15 +423,21 @@
     root.querySelector("[data-count]").hidden = mode !== "pixels";
     root.querySelector("[data-matrix]").hidden = mode !== "matrix";
     root.querySelector("[data-phases]").hidden = mode === "matrix";
+    root.querySelector("[data-player-rules]").hidden = mode === "matrix";
+    root.querySelector("[data-flow]").hidden = mode === "matrix";
     root.querySelector("[data-test-score]").hidden = mode !== "matrix";
     root.querySelectorAll("[data-native-effect]").forEach((node) => {
       node.hidden = mode !== "segment";
     });
+    root.querySelectorAll("[data-rule]").forEach(updateAppearance);
   }
 
   function render() {
+    renderProfiles();
     const select = $("wled-device");
-    select.replaceChildren(...configuration.devices.map((item) => new Option(item.name, item.id)));
+    select.replaceChildren(
+      ...configuration.devices.map((item) => new Option(item.name, item.id)),
+    );
     if (!device()) selected = configuration.devices[0]?.id || "";
     if (!selected) select.add(new Option("No devices configured", ""));
     select.value = selected;
@@ -249,7 +453,9 @@
     $("wled-url").value = current.url;
     $("wled-device-enabled").checked = current.enabled;
     current.targets.forEach((target) => {
-      const root = $("wled-target-template").content.firstElementChild.cloneNode(true);
+      const root = $(
+        "wled-target-template",
+      ).content.firstElementChild.cloneNode(true);
       root.dataset.target = target.id;
       root.querySelector("[data-title]").textContent = target.name;
       ["name", "mode", "segment", "start", "count"].forEach((key) => {
@@ -266,32 +472,61 @@
       for (const [key, title] of Object.entries(phases))
         root
           .querySelector("[data-phase-rows]")
-          .append(appearanceRow(key, title, target.phases[key], false, target.mode));
-      for (const [key, title] of Object.entries(effects))
+          .append(
+            appearanceRow(key, title, target.phases[key], false, target.mode),
+          );
+      for (const group of effectGroups) {
+        const section = document.createElement("details");
+        section.className = "advanced";
+        section.dataset.eventGroup = group.id;
+        const heading = document.createElement("summary");
+        heading.textContent = group.title;
+        section.append(heading);
+        for (const [key, title] of Object.entries(group.effects))
+          section.append(
+            appearanceRow(key, title, target.effects[key], true, target.mode),
+          );
+        root.querySelector("[data-effect-rows]").append(section);
+      }
+      for (let slot = 1; slot <= 10; slot++)
         root
-          .querySelector("[data-effect-rows]")
-          .append(appearanceRow(key, title, target.effects[key], true, target.mode));
+          .querySelector("[data-player-rows]")
+          .append(
+            appearanceRow(
+              String(slot),
+              `Player ${slot}`,
+              target.players?.[slot],
+              true,
+              target.mode,
+              true,
+            ),
+          );
+      root.querySelectorAll("[data-flow-step]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const key = button.dataset.flowStep;
+          const section = root.querySelector(
+            key === "hits" || key === "victories"
+              ? `[data-event-group="${key}"]`
+              : "[data-phases]",
+          );
+          section.open = true;
+          section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          const row = section.querySelector(`[data-rule="${key}"]`) || section;
+          row.querySelector("input, select")?.focus({ preventScroll: true });
+        });
+      });
       field(root, "mode").addEventListener("change", () => targetMode(root));
       root.querySelector("[data-remove]").addEventListener("click", () => {
         collect();
-        current.targets = current.targets.filter((item) => item.id !== target.id);
+        current.targets = current.targets.filter(
+          (item) => item.id !== target.id,
+        );
         markChanged();
         render();
       });
-      root.querySelector("[data-test]").addEventListener("click", () =>
-        work(async () => {
-          await api(`/api/wled/${selected}/test`, "POST", {
-            target_id: target.id,
-            phase: root.querySelector("[data-test-phase]").value,
-            value:
-              target.mode === "matrix"
-                ? Number(root.querySelector("[data-test-value]").value)
-                : null,
-            duration: 3,
-          });
-          notice("Test applied for 3 seconds. Automatic lighting resumes afterward.");
-        }),
-      );
+      root
+        .querySelector("[data-test]")
+        .addEventListener("click", () => previewTarget(root));
       targetMode(root);
       $("wled-targets").append(root);
     });
@@ -307,13 +542,17 @@
       .forEach((row) => {
         const enabled = row.querySelector('[data-value="enabled"]');
         if (enabled && !enabled.checked) return;
-        const value = (name) => row.querySelector(`[data-value="${name}"]`).value;
-        result[row.dataset.rule] = {
+        const value = (name) =>
+          row.querySelector(`[data-value="${name}"]`).value;
+        const key = row.dataset.playerSlot || row.dataset.rule;
+        result[key] = {
           color: value("color"),
           brightness: Number(value("brightness")),
           effect: mode === "segment" ? Number(value("effect")) : 0,
         };
-        if (enabled) result[row.dataset.rule].duration = Number(value("duration"));
+        if (row.dataset.playerSlot)
+          result[key].name_filter = value("name_filter").trim();
+        else if (enabled) result[key].duration = Number(value("duration"));
       });
     return result;
   }
@@ -327,7 +566,9 @@
     $("wled-targets")
       .querySelectorAll("[data-target]")
       .forEach((root) => {
-        const target = current.targets.find((item) => item.id === root.dataset.target);
+        const target = current.targets.find(
+          (item) => item.id === root.dataset.target,
+        );
         ["name", "mode"].forEach((key) => {
           target[key] = field(root, key).value;
         });
@@ -337,6 +578,7 @@
         target.enabled = field(root, "enabled").checked;
         target.phases = collectRules(root, "[data-phase-rows]", target.mode);
         target.effects = collectRules(root, "[data-effect-rows]", target.mode);
+        target.players = collectRules(root, "[data-player-rows]", target.mode);
         target.matrix = {
           width: Number(matrixField(root, "width").value),
           height: Number(matrixField(root, "height").value),
@@ -354,24 +596,33 @@
 
   function renderStatus() {
     if (!latestStatus) return;
-    $("wled-phase").textContent = phases[latestStatus.game.phase] || latestStatus.game.phase;
+    $("wled-phase").textContent =
+      phases[latestStatus.game.phase] || latestStatus.game.phase;
     $("wled-reason").textContent = latestStatus.game.reason;
+    $("wled-targets")
+      .querySelectorAll("[data-flow-step]")
+      .forEach((button) => {
+        const active = button.dataset.flowStep === latestStatus.game.phase;
+        if (active) button.setAttribute("aria-current", "step");
+        else button.removeAttribute("aria-current");
+      });
     const list = $("wled-device-status");
     list.replaceChildren();
     latestStatus.devices.forEach((item) => {
       const line = document.createElement("p");
-      line.textContent = `${item.name}: ${!latestStatus.enabled || !item.enabled ? "Automation disabled" : item.connected ? "Connected" : "Not connected"}${item.error ? ` — ${item.error}` : ""}`;
+      line.textContent = `${item.name}: ${item.on === false ? "Lights off" : item.connected ? "Connected" : "Not connected"} · ${latestStatus.enabled && item.enabled ? "Automation enabled" : "Automation disabled"}${item.error ? ` — ${item.error}` : ""}`;
       list.append(line);
     });
-    const info = latestStatus.devices.find((item) => item.id === selected)?.info;
+    const info = deviceInfo();
     $("wled-capabilities").textContent = info
       ? `WLED ${info.version} · ${info.segments.map((segment) => `${segment.name} (ID ${segment.id}, ${segment.length} LEDs)`).join(" · ")}${info.on === false || info.brightness === 0 ? " · Master power or brightness is off in WLED." : ""}`
-      : "Save the device, then check its connection to load segments and effects.";
+      : "Enter the address and check the connection to load segments and effects. No save needed.";
   }
 
   async function load() {
     configuration = await api("/api/wled");
     changed = false;
+    saveError = "";
     render();
   }
 
@@ -384,6 +635,12 @@
         statusError = "";
         syncIntegration();
         if (page === "wled" && !configuration) await load();
+        if (
+          configuration &&
+          !changed &&
+          latestStatus.active_profile !== configuration.active_profile
+        )
+          await load();
         renderStatus();
       } catch (error) {
         statusError = error.message;
@@ -410,9 +667,18 @@
   async function work(task) {
     if (working) return;
     working = true;
+    clearTimeout(saveTimer);
     buttons();
+    for (const id of [
+      "wled-profile",
+      "wled-profile-name",
+      "wled-profile-create",
+      "wled-profile-delete",
+    ])
+      $(id).disabled = true;
     try {
       await refreshing;
+      await saving;
       await task();
     } catch (error) {
       notice(error.message, true);
@@ -421,26 +687,50 @@
         control.disabled = false;
       });
       working = false;
+      $("wled-profile-name").disabled = false;
       buttons();
+      if (changed && !saveError) saveTimer = setTimeout(saveDraft, 500);
       await refreshWled();
     }
   }
 
   form.addEventListener("input", (event) => {
-    if (!event.target.matches("#wled-device, [data-test-phase], [data-test-value]")) markChanged();
+    if (!event.target.matches("#wled-device, [data-test-value]")) markChanged();
+    if (event.target.id === "wled-url") renderStatus();
   });
   form.addEventListener("change", (event) => {
-    if (!event.target.matches("#wled-device, [data-test-phase], [data-test-value]")) markChanged();
+    if (!event.target.matches("#wled-device, [data-test-value]")) markChanged();
   });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    collect();
+    saveDraft();
+  });
+  $("wled-retry").addEventListener("click", saveDraft);
+  $("wled-profile").addEventListener("change", () => {
+    const id = $("wled-profile").value;
     work(async () => {
-      await api("/api/wled", "PATCH", { devices: configuration.devices });
+      await api("/api/wled/profile", "PUT", { id });
       await load();
-      notice("WLED settings saved.");
+      notice("Lighting profile applied.");
     });
   });
+  $("wled-profile-create").addEventListener("click", () => {
+    const name = $("wled-profile-name").value.trim();
+    if (!name) return $("wled-profile-name").focus();
+    work(async () => {
+      await api("/api/wled/profiles", "POST", { name });
+      $("wled-profile-name").value = "";
+      await load();
+      notice("Profile created from the current colours and effects.");
+    });
+  });
+  $("wled-profile-delete").addEventListener("click", () =>
+    work(async () => {
+      await api(`/api/wled/profiles/${configuration.active_profile}`, "DELETE");
+      await load();
+      notice("Profile removed.");
+    }),
+  );
   $("wled-toggle").addEventListener("click", () => {
     const enabled = !latestStatus.enabled;
     work(async () => {
@@ -464,7 +754,8 @@
   $("wled-discover").addEventListener("click", () =>
     work(async () => {
       const message = $("wled-discovery-status");
-      message.textContent = "Searching for WLED controllers… This takes a few seconds.";
+      message.textContent =
+        "Searching for WLED controllers… This takes a few seconds.";
       discovered = [];
       renderDiscovery();
       try {
@@ -475,14 +766,17 @@
           ? `Found ${discovered.length} controller${discovered.length === 1 ? "" : "s"}. Choose Add to configure one.`
           : "No reachable controllers found. Check they are on OcheCore's network with mDNS enabled, or add an address manually.";
       } catch (error) {
-        message.textContent = "Discovery failed. You can still add a device by address.";
+        message.textContent =
+          "Discovery failed. You can still add a device by address.";
         throw error;
       }
     }),
   );
   $("wled-remove-device").addEventListener("click", () => {
     collect();
-    configuration.devices = configuration.devices.filter((item) => item.id !== selected);
+    configuration.devices = configuration.devices.filter(
+      (item) => item.id !== selected,
+    );
     selected = "";
     markChanged();
     render();
@@ -494,14 +788,30 @@
     render();
   });
   $("wled-reload").addEventListener("click", () => work(load));
-  $("wled-probe").addEventListener("click", () =>
+  $("wled-probe").addEventListener("click", () => {
+    if (!$("wled-url").reportValidity()) return;
+    collect();
     work(async () => {
-      const info = await api(`/api/wled/${selected}/probe`, "POST");
-      if (latestStatus) latestStatus.devices.find((item) => item.id === selected).info = info;
+      const url = $("wled-url").value.trim();
+      const info = await api("/api/wled/probe", "POST", { url });
+      capabilities.set(origin(url), info);
       render();
       notice("WLED connection verified.");
-    }),
-  );
+    });
+  });
+  for (const on of [true, false]) {
+    $(`wled-power-${on ? "on" : "off"}`).addEventListener("click", () =>
+      work(async () => {
+        const result = await api(`/api/wled/${selected}/power`, "POST", { on });
+        if (!result.applied) throw new Error(result.devices[0].error);
+        notice(
+          on
+            ? "Lights on. Saved automation resumes if enabled."
+            : "Lights off. Saved settings kept.",
+        );
+      }),
+    );
+  }
   window.addEventListener("hashchange", refreshWled);
   refreshWled();
   setInterval(refreshWled, 2000);
