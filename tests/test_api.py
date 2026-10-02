@@ -19,6 +19,8 @@ def test_unconfigured_startup_and_configuration_persistence(settings):
     with TestClient(app) as client:
         assert client.get("/").status_code == 200
         assert client.get("/static/app.js").status_code == 200
+        assert client.get("/static/app.js").headers["cache-control"] == "no-cache"
+        assert client.get("/").headers["cache-control"] == "no-cache"
         assert client.get("/healthz").json()["status"] == "ok"
         assert client.get("/readyz").status_code == 503
         assert client.get("/api/status").json()["auth"]["state"] == "unconfigured"

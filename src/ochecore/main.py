@@ -73,6 +73,8 @@ def create_app(settings: Settings | None = None, transport=None) -> FastAPI:
         response.headers["Content-Security-Policy"] = policy
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
+        elif request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     @application.exception_handler(ConnectionProblem)
