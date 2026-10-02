@@ -1,0 +1,118 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Check Python ${{ matrix.python }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.12"
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Lint and check formatting
+        run: |
+          uv run --no-sync ruff check src tests scripts/check_build.py
+          uv run --no-sync ruff format --check src tests scripts/check_build.py
+      - name: Run tests
+        run: uv run --no-sync pytest -q
+
+  python:
+    name: Build Python packages
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.12"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Build wheel and source archive
+        run: uv build
+      - name: Check installed packages
+        run: |
+          for package in dist/*.whl dist/*.tar.gz; do
+            uv run --isolated --no-project --with "$package" python scripts/check_build.py
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ochecore-python
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  docker:
+    name: Build Docker (${{ matrix.arch }})
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    env:
+      BUILD_IMAGE: ochecore:build-${{ github.run_number }}-${{ matrix.arch }}
+      BUILD_ARCHIVE: ochecore-linux-${{ matrix.arch }}.tar
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up ARM emulation
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build image archive
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          tags: ${{ env.BUILD_IMAGE }}
+          outputs: type=docker,dest=${{ runner.temp }}/${{ env.BUILD_ARCHIVE }}
+          cache-from: type=gha,scope=ochecore-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=ochecore-${{ matrix.arch }}
+      - name: Check packaged CLI, API and UI
+        run: |
+          docker load --input "$RUNNER_TEMP/$BUILD_ARCHIVE"
+          docker run --rm -i --platform "linux/${{ matrix.arch }}" \
+            --network none --entrypoint python "$BUILD_IMAGE" - < scripts/check_build.py
+      - name: Compress image archive
+        run: gzip "$RUNNER_TEMP/$BUILD_ARCHIVE"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ochecore-docker-${{ matrix.arch }}
+          path: ${{ runner.temp }}/${{ env.BUILD_ARCHIVE }}.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

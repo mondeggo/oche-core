@@ -371,6 +371,39 @@ uv run ruff format --check src tests
 Tests use HTTP mocks and a local WebSocket test server; no AutoDarts account is required.
 [Validation notes](docs/VALIDATION.md) include a Windows temporary-directory workaround.
 
+### GitHub builds
+
+The **Build** workflow runs on pull requests, pushes to `main` or `master`, and tags starting
+with `v`. To start it manually, open **Actions → Build → Run workflow** after pushing the
+workflow to GitHub's default branch. No repository secrets or AutoDarts account are needed.
+
+Ruff and pytest run on Python 3.12 and 3.13 before creating these downloadable artifacts:
+
+| Artifact | Contents |
+|---|---|
+| `ochecore-python` | Python wheel and source archive |
+| `ochecore-docker-amd64` | Docker image for Linux x64 |
+| `ochecore-docker-arm64` | Docker image for Linux ARM64, including 64-bit Raspberry Pi OS |
+
+Each package and image is checked for CLI startup, API health, voice catalogue and optional
+UI assets. ARM64 uses emulation; testing on a physical Raspberry Pi is still needed. Voice
+recordings are downloaded when selected at runtime and are not bundled in builds.
+
+Download artifacts from a completed run's **Artifacts** section; they are retained for 14
+days. Extract the download, then install a wheel with `uv tool install path/to/ochecore.whl`
+(use the actual filename), or load a Docker archive:
+
+```sh
+docker load --input ochecore-linux-amd64.tar.gz
+docker run --rm -p 127.0.0.1:9180:9180 --mount type=bind,source="$(pwd)/data",target=/data ochecore:build-RUN_NUMBER-amd64
+```
+
+Create `data` first and replace `RUN_NUMBER` with the workflow run number; `docker load`
+also prints the full image tag. On Linux, make the folder writable by container UID 10001.
+For ARM64, replace `amd64` with `arm64`. These builds are uploaded as Actions artifacts;
+the workflow does not publish to PyPI, a container registry or GitHub Releases. The package
+version remains the version declared in `pyproject.toml`, including for tag-triggered builds.
+
 Use English in all maintained source, comments, messages, UI, configuration examples and
 documentation. `.idea` remains the original user brief; `ressources/` contains unchanged
 third-party references. Neither is shipped in the package or Docker image.

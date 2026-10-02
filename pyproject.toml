@@ -39,3 +39,6 @@ select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ochecore"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/.idea"]
