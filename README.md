@@ -159,6 +159,22 @@ with your user account permissions. Tokens are plaintext secrets, excluded from 
 Docker image. Use one process/worker per data directory. **Disconnect** removes this local
 session; it does not revoke other sessions on your account.
 
+## Web interface
+
+Open `http://127.0.0.1:9180` when the service is running.
+
+- **Overview** shows the selected board, account, cloud connection and game event count.
+- **AutoDarts** contains account login and board selection. OAuth settings and connection
+  diagnostics are under expandable details.
+- **Events** switches between normalized game events and raw AutoDarts frames. Open an entry
+  to inspect its JSON payload; the view updates automatically.
+- **Integrations** lists AutoDarts and the planned WLED and Caller integrations. Lighting and
+  audio controls will appear when those integrations are implemented.
+
+The interface uses plain HTML, CSS and JavaScript in `src/ochecore/static/`, without a frontend
+build step. Navigation stays in the browser; all controls use the same API as the terminal.
+Settings and login data are saved as JSON in `data/`; there is no database.
+
 ## Configuration
 
 `config/config.yaml` is loaded at startup. Priority, from highest to lowest:

@@ -1,54 +1,225 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OcheCore</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/app.js" defer></script>
-</head>
-<body>
-  <main>
-    <header><h1>OcheCore</h1><span id="live" role="status">Connecting…</span></header>
-    <div id="notice" role="status" hidden></div>
-    <section aria-labelledby="status-heading">
-      <h2 id="status-heading">Status</h2>
-      <dl>
-        <div><dt>Account</dt><dd id="auth-state">—</dd></div>
-        <div><dt>Cloud</dt><dd id="cloud-state">—</dd></div>
-        <div><dt>Active match</dt><dd id="match">—</dd></div>
-        <div><dt>Events received</dt><dd id="count">0</dd></div>
-      </dl>
-      <p id="connection-error" class="error" role="status"></p>
-    </section>
-    <section aria-labelledby="connection-heading">
-      <h2 id="connection-heading">Connection</h2>
-      <form id="configuration">
-        <label for="client_id">OAuth Client ID</label>
-        <input id="client_id" name="client_id" autocomplete="off" maxlength="200">
-        <label for="board_id">Board</label>
-        <select id="board_id" name="board_id"><option value="">No board selected</option></select>
-        <p class="hint" id="boards-status" role="status">Connect your account to load boards.</p>
-        <button type="button" id="refresh-boards" disabled>Refresh boards</button>
-        <p class="hint" id="managed"></p>
-        <button type="submit" id="save" disabled>Save settings</button>
-      </form>
-      <div class="actions">
-        <button id="login" type="button" disabled>Connect account</button>
-        <button id="logout" type="button" disabled>Disconnect</button>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f6f3" />
+    <title>Overview · OcheCore</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <aside class="sidebar">
+      <a class="brand" href="#overview">
+        <span class="brand-mark" aria-hidden="true"></span>
+        OcheCore
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#overview" data-page="overview" aria-current="page">Overview</a>
+        <a href="#events" data-page="events">Events</a>
+        <p class="nav-label">Integrations</p>
+        <a href="#integrations" data-page="integrations">All integrations</a>
+        <a href="#autodarts" data-page="autodarts">AutoDarts</a>
+        <a href="#wled" data-page="wled">
+          WLED
+          <span class="nav-note">Planned</span>
+        </a>
+        <a href="#caller" data-page="caller">
+          Caller
+          <span class="nav-note">Planned</span>
+        </a>
+      </nav>
+      <div class="service-status">
+        <span id="live" role="status">Connecting…</span>
+        <span>Local service</span>
       </div>
-      <div id="device" hidden>
-        <p>Approve this code on AutoDarts:</p>
-        <strong id="user-code"></strong>
-        <a id="verification" target="_blank" rel="noreferrer">Open AutoDarts</a>
-        <p class="hint" id="expires"></p>
+    </aside>
+    <main id="main" tabindex="-1">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Your darts setup</p>
+          <h1 id="page-title" tabindex="-1">Overview</h1>
+          <p id="page-description" class="muted">Your board and connection at a glance.</p>
+        </div>
+        <a class="text-link" href="https://play.autodarts.com/" target="_blank" rel="noreferrer">
+          Open AutoDarts ↗
+        </a>
+      </header>
+      <div id="notice" class="notice" role="status" hidden>
+        <span id="notice-text"></span>
+        <button id="dismiss-notice" class="quiet" type="button" aria-label="Dismiss notification">
+          ×
+        </button>
       </div>
-    </section>
-    <details class="events">
-      <summary>Recent game events</summary>
-      <p id="empty" class="hint">No game events received.</p>
-      <div id="event-list"></div>
-    </details>
-  </main>
-</body>
+      <div id="connection-warning" class="warning" role="status" hidden>
+        <span id="warning-text"></span>
+        <a href="#autodarts">Connection details</a>
+      </div>
+
+      <section data-view="overview" aria-label="Overview">
+        <div class="panel board-panel">
+          <div class="panel-heading">
+            <h2>Board</h2>
+            <span id="board-state" class="badge">Not selected</span>
+          </div>
+          <p id="board-name" class="board-name">Choose your board</p>
+          <p id="match" class="muted">Connect AutoDarts to get started.</p>
+          <a class="button primary" href="#autodarts">Manage connection</a>
+        </div>
+        <dl class="metrics">
+          <div class="panel">
+            <dt>AutoDarts account</dt>
+            <dd id="auth-state">—</dd>
+          </div>
+          <div class="panel">
+            <dt>Cloud connection</dt>
+            <dd id="cloud-state">—</dd>
+          </div>
+          <div class="panel">
+            <dt>Game events</dt>
+            <dd>
+              <span id="count">0</span>
+              <a href="#events">View events →</a>
+            </dd>
+          </div>
+        </dl>
+        <div class="panel compact-panel">
+          <div>
+            <h2>Make it your setup</h2>
+            <p class="muted">Manage AutoDarts and see what’s next for lights and audio.</p>
+          </div>
+          <a class="button" href="#integrations">Integrations</a>
+        </div>
+      </section>
+
+      <section data-view="integrations" aria-label="Integrations" hidden>
+        <div class="panel integration-list">
+          <a class="integration-row" href="#autodarts">
+            <div>
+              <h2>AutoDarts</h2>
+              <p class="muted">Connect your account and receive board events.</p>
+            </div>
+            <span id="integration-state" class="badge">—</span>
+            <span aria-hidden="true">→</span>
+          </a>
+          <a class="integration-row" href="#wled">
+            <div>
+              <h2>WLED</h2>
+              <p class="muted">Lighting effects for your game.</p>
+            </div>
+            <span class="badge">Planned</span>
+            <span aria-hidden="true">→</span>
+          </a>
+          <a class="integration-row" href="#caller">
+            <div>
+              <h2>Caller</h2>
+              <p class="muted">Voice announcements for scores and game events.</p>
+            </div>
+            <span class="badge">Planned</span>
+            <span aria-hidden="true">→</span>
+          </a>
+        </div>
+      </section>
+
+      <section data-view="autodarts" aria-label="AutoDarts settings" hidden>
+        <div class="panel">
+          <div class="panel-heading">
+            <h2>Account</h2>
+            <span id="account-state" class="badge">—</span>
+          </div>
+          <p id="account-hint" class="muted">Sign in on AutoDarts to connect your board.</p>
+          <div class="actions">
+            <button id="login" class="primary" type="button" disabled>Connect account</button>
+            <button id="logout" type="button" disabled>Disconnect</button>
+          </div>
+          <div id="device" class="device" hidden>
+            <p>Enter this code on AutoDarts to approve the connection.</p>
+            <strong id="user-code"></strong>
+            <a id="verification" class="button primary" target="_blank" rel="noreferrer">
+              Open AutoDarts ↗
+            </a>
+            <p id="expires" class="hint"></p>
+          </div>
+        </div>
+        <form id="configuration" class="panel">
+          <h2>Board</h2>
+          <label for="board_id">Selected board</label>
+          <div class="field-row">
+            <select id="board_id" name="board_id" aria-describedby="boards-status">
+              <option value="">No board selected</option>
+            </select>
+            <button type="button" id="refresh-boards" disabled>Refresh</button>
+          </div>
+          <p class="hint" id="boards-status" role="status">Connect your account to load boards.</p>
+          <details class="advanced">
+            <summary>Advanced settings</summary>
+            <label for="client_id">OAuth Client ID</label>
+            <input
+              id="client_id"
+              name="client_id"
+              autocomplete="off"
+              maxlength="200"
+              aria-describedby="managed"
+            />
+            <p class="hint" id="managed"></p>
+          </details>
+          <div class="actions">
+            <button type="submit" id="save" class="primary" disabled>Save settings</button>
+            <span id="unsaved" class="hint" hidden>Unsaved changes</span>
+          </div>
+        </form>
+        <details class="panel diagnostics">
+          <summary>Connection details</summary>
+          <dl class="detail-list">
+            <div>
+              <dt>Board ID</dt>
+              <dd id="detail-board">—</dd>
+            </div>
+            <div>
+              <dt>Match ID</dt>
+              <dd id="detail-match">—</dd>
+            </div>
+          </dl>
+          <p id="connection-error" class="hint">No connection errors reported.</p>
+        </details>
+      </section>
+
+      <section data-view="planned" aria-label="Planned integration" hidden>
+        <div class="panel planned-panel">
+          <span class="badge">Planned</span>
+          <h2 id="planned-title"></h2>
+          <p id="planned-description" class="muted"></p>
+          <p class="hint">This integration is not implemented yet.</p>
+          <a class="button" href="#integrations">Back to integrations</a>
+        </div>
+      </section>
+
+      <section data-view="events" aria-label="Events" hidden>
+        <div class="panel">
+          <div class="panel-heading event-toolbar">
+            <div class="stream-picker" role="group" aria-label="Event stream">
+              <button type="button" data-stream="normalized" aria-pressed="true">
+                Game events
+              </button>
+              <button type="button" data-stream="raw" aria-pressed="false">Raw AutoDarts</button>
+            </div>
+            <span id="event-count" class="hint">0 events</span>
+          </div>
+          <p id="stream-description" class="hint">
+            Normalized game events, newest first. Open an event to see its payload.
+          </p>
+          <p id="event-error" class="error" role="status" hidden></p>
+          <div id="empty" class="empty-state">
+            <h2>No game events yet</h2>
+            <p class="muted">Start a match and throw a dart on your connected board.</p>
+          </div>
+          <div id="event-list"></div>
+          <p class="hint event-footer">
+            Latest 100 entries from this service session. Updates automatically.
+          </p>
+        </div>
+      </section>
+    </main>
+  </body>
 </html>

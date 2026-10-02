@@ -1,7 +1,31 @@
 # Connection and event validation
 
-Updated October 2, 2026 after implementing game events, separate raw and normalized streams,
-and a Docker bind mount. Terminal controls and the optional UI share the same headless service.
+Updated October 2, 2026 after simplifying the web interface and removing the unused combined
+event history and subscriber queue. Terminal controls and the optional UI share the same
+headless service.
+
+## Interface refresh
+
+The sidebar separates Overview, Events and Integrations, with AutoDarts settings and clearly
+marked planned WLED/Caller pages. Advanced connection settings and JSON payloads use
+expandable details. The layout adapts to narrow screens, and navigation provides keyboard
+focus, current-page labels and a skip link.
+
+All 85 Python tests, Ruff checks, formatting and JavaScript syntax checks passed after the
+cleanup. A temporary jsdom check with mocked API responses also passed navigation, settings
+saves, locked fields, preservation of unsaved edits and expanded events, raw/normalized
+switching, delayed-response handling, offline recovery and device approval. Raw duplicate,
+null and string frames were checked, including rendering upstream markup as plain text.
+This was a DOM behavior check, not a visual browser review. No project dependencies were added.
+
+`uv build` successfully produced the source distribution and wheel, and
+`docker compose config --quiet` passed. The Docker rebuild could not run: Docker Desktop was
+stopped, and starting it failed in the inference manager while opening its `dockerInference`
+socket. The redesigned interface has **not** been deployed to Docker yet. After Docker Desktop
+is working, run `docker compose up --build -d --wait --wait-timeout 60`.
+
+Browser validation also remains pending: the browser tool returned no available browsers.
+The deployment checks below describe the earlier successful event/API release.
 
 ## Automated checks
 
@@ -42,7 +66,7 @@ readiness for rejected game topics, continued delivery on healthy topics and err
 Ruff checks and formatting passed for `src/ochecore/` and `tests/`. The simplified UI passed
 JavaScript syntax validation. No new dependencies were added.
 
-## Deployment
+## Previous deployment checks
 
 `docker compose up --build -d --wait --wait-timeout 60` successfully rebuilt the image from `src/ochecore/` and
 recreated the container. Docker reports it as healthy, and `GET /healthz` returns
@@ -99,8 +123,8 @@ checked against the rebuilt service.
   The prior match-state endpoint returned 404 during this change; current normalization
   coverage is based on reference contracts and replay fixtures. See [event evidence](EVENTS.md).
 - Repeat authentication with an OAuth Client ID assigned to OcheCore before distribution.
-- Visual/browser acceptance: the browser tool previously denied local access to
-  `http://127.0.0.1:9180`. No alternative browser automation bypassed that decision.
+- Rebuild Docker and review the redesigned interface in a browser, including a narrow viewport.
+  The earlier browser attempt denied localhost access; the latest attempt found no browser.
 - ARM/Raspberry Pi: Docker was tested on Linux amd64 through Docker Desktop.
 - Long-running sessions: HTTP refresh and WebSocket recovery are tested separately.
   Real acceptance should include a match beyond 15 minutes and an application restart.
