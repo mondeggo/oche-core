@@ -162,6 +162,69 @@ async def test_download_limit_leaves_no_installed_pack(tmp_path, monkeypatch):
         assert list(tmp_path.iterdir()) == []
 
 
+async def test_select_voice_downloads_only_selection_and_removes_previous_pack(tmp_path):
+    install_fixture(tmp_path)
+    other = next(key for key in VOICES if key != VOICE)
+    requests = []
+
+    def handle(request):
+        requests.append(str(request.url))
+        return httpx.Response(200, content=archive_bytes())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        caller = Caller(tmp_path, http, EventBus(), lambda: {})
+        caller.start()
+        caller.library.catalogue()
+        assert not requests and caller.library.task is None
+        await caller.configure(CallerConfig(voice=other))
+        assert caller.config.voice == other
+        assert caller.library.installed(VOICE)  # Kept until its replacement is verified.
+        await caller.library.task
+        assert requests == [VOICES[other]["url"]]
+        assert caller.library.installed(other)
+        assert not (tmp_path / "voices" / VOICE).exists()
+        assert VOICE not in caller.library.cache
+        assert list((tmp_path / "voices").iterdir()) == [tmp_path / "voices" / other]
+        await caller.configure(CallerConfig(voice=other, volume=0.4))
+        assert len(requests) == 1
+        await caller.close()
+
+
+async def test_voice_switch_during_download_preserves_saved_selection(tmp_path):
+    release = asyncio.Event()
+    other = next(key for key in VOICES if key != VOICE)
+
+    async def handle(request):
+        await release.wait()
+        return httpx.Response(200, content=archive_bytes())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        caller = Caller(tmp_path, http, EventBus(), lambda: {})
+        await caller.configure(CallerConfig(voice=VOICE))
+        with pytest.raises(ConnectionProblem, match="Wait"):
+            await caller.configure(CallerConfig(voice=other))
+        assert caller.config.voice == VOICE
+        assert json.loads(caller.path.read_text())["voice"] == VOICE
+        release.set()
+        await caller.library.task
+        await caller.close()
+
+
+async def test_selecting_cached_voice_and_clearing_selection_prunes_cache(tmp_path):
+    install_fixture(tmp_path)
+    other = next(key for key in VOICES if key != VOICE)
+    unused = tmp_path / "voices" / other
+    unused.mkdir()
+    (unused / "index.json").write_text("{}")
+    async with httpx.AsyncClient() as http:
+        caller = Caller(tmp_path, http, EventBus(), lambda: {})
+        await caller.configure(CallerConfig(voice=VOICE))
+        assert not unused.exists()
+        await caller.configure(CallerConfig(voice=""))
+        assert not caller.library.installed(VOICE)
+        await caller.close()
+
+
 @pytest.mark.parametrize("variant", GAME_MODES + ("CountUp", "Count-Up"))
 def test_all_modes_normalized_replay_baseline_visit_and_winner(variant):
     frame = json.loads((Path(__file__).parent / "fixtures/x01-state.json").read_text())

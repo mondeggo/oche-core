@@ -139,7 +139,14 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
 
     @router.post("/api/caller/voices/{voice_id}/install", status_code=202)
     async def caller_install(voice_id: str, request: Request):
-        return request.app.state.runtime.caller.library.install(voice_id)
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            await runtime.caller.configure(
+                runtime.caller.config.model_copy(update={"voice": voice_id})
+            )
+        if runtime.caller.library.installed(voice_id):
+            return {"state": "installed", "voice_id": voice_id}
+        return runtime.caller.status()["download"]
 
     @router.post("/api/caller/test")
     async def caller_test(sample: CallerTest, request: Request):

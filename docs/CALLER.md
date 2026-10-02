@@ -2,14 +2,20 @@
 
 The headless service turns normalized game events into ordered audio calls. The UI and CLI
 share the same settings and controls. Enable **Caller** in **All integrations**, then open
-its sidebar page, choose a language and voice, install the pack and save your settings.
+its sidebar page, choose a language and voice, and save your settings.
 Use **Play test** to check the selected output without starting a match.
 
 ## Voices and output
 
 The catalogue contains 102 presets from the supplied darts-caller catalogue, with links to
 the [Peschi previews](https://darts-caller-preview.peschi.org/). French includes Rémi and Léa.
-Installation downloads the provider's ZIP in the background. Settings are in `data/caller.json`;
+The catalogue is metadata, not downloaded audio. Saving a voice downloads only that selected
+pack in the background. Once installation succeeds, other cached packs are removed, along with
+temporary ZIP files. A failed download preserves the previous pack; reselect it or use **Retry
+download**. Calls pause while the selected voice is being prepared. Wait for the current download
+to finish before switching again. A restart resumes installation of a saved selection if needed.
+
+Settings are in `data/caller.json`;
 installed clips and their sound-key index are in `data/voices/`. Both persist in the Docker
 bind mount. Installed packs work offline. Audio files are not bundled in the repository or image.
 
@@ -21,7 +27,7 @@ bind mount. Installed packs work offline. Audio files are not bundled in the rep
 - **Both**: sends calls to host speakers and enabled browsers. Outputs are not synchronized.
 
 Volume, dart announcements, visit totals, checkout reminders, player names, bots and local-only
-filtering are configurable. Disabling Caller keeps its settings and voices. **Stop sound**
+filtering are configurable. Disabling Caller keeps its settings and selected pack. **Stop sound**
 cancels current and queued calls; later game events can play again.
 
 Missing clips are skipped and listed in status. Names fall back to numbered player clips when
@@ -34,10 +40,9 @@ With the service running:
 
 ```sh
 uv run ochecore caller voices --language fr-FR
-uv run ochecore caller install amazon-fr-fr-remi-male
-uv run ochecore caller status
-# Wait until download.state is installed, then select it:
 uv run ochecore caller config --voice amazon-fr-fr-remi-male --output host --volume 0.6
+uv run ochecore caller status
+# Wait until installed is true, then enable playback:
 uv run ochecore caller enable
 uv run ochecore caller test --score 180
 uv run ochecore caller test --call checkout --score 40
@@ -46,7 +51,9 @@ uv run ochecore caller disable
 ```
 
 `caller config --file caller.json` replaces the complete settings. Individual flags update only
-the supplied fields. A settings file can also set `darts` (`auto`, `segment`, `score`, `off`),
+the supplied fields. `caller install VOICE_ID` also selects that voice and starts its download;
+it does not build a collection of unused packs. `caller config --voice=` clears the selection
+and managed voice cache. A settings file can also set `darts` (`auto`, `segment`, `score`, `off`),
 `turn_totals`, `checkouts`, `players`, `include_bots` and `local_only`. Booleans default to true
 except `enabled` and `local_only`. Default output is `host`, volume `0.6`, darts `auto`.
 
@@ -89,7 +96,7 @@ after twelve seconds. A new browser connection receives future calls only.
 | `PATCH /api/caller` | Update supplied settings |
 | `GET /api/caller/status` | Enabled state, output, errors, downloads, missing sounds and recent calls |
 | `GET /api/caller/voices` | Catalogue with installed flags and preview links |
-| `POST /api/caller/voices/{id}/install` | Start a background installation; returns 202 |
+| `POST /api/caller/voices/{id}/install` | Select the voice and start its installation; returns 202 |
 | `POST /api/caller/test` | Play a sample, e.g. `{"call":"score","score":180}` |
 | `POST /api/caller/stop` | Cancel current and queued sound |
 | `GET /api/caller/audio/{id}/{clip}` | Serve a local installed clip |

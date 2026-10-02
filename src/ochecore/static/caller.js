@@ -50,11 +50,8 @@
     const voice = voices.find((v) => v.id === $("caller-voice").value);
     const download = current?.download;
     const installing = ["downloading", "installing"].includes(download?.state);
-    $("caller-install").disabled =
-      working || !voice || voice.installed || installing;
-    $("caller-install").textContent = voice?.installed
-      ? "Installed"
-      : "Install voice";
+    $("caller-retry").hidden = download?.state !== "error";
+    $("caller-retry").disabled = working || dirty;
     $("caller-preview").hidden = !voice;
     if (voice) $("caller-preview").href = voice.preview_url;
     $("caller-download").textContent = installing
@@ -62,9 +59,13 @@
       : download?.error ||
         (voice?.installed
           ? "Installed locally. Ready to use."
-          : "Voice packs are downloaded once and kept locally.");
+          : "Save to download this voice. The previous pack is removed when the new one is ready.");
     $("caller-save").disabled =
-      working || !dirty || !config || !voice?.installed;
+      working ||
+      !dirty ||
+      !config ||
+      !voice ||
+      (installing && voice.id !== current.voice);
     $("caller-unsaved").hidden = !dirty;
     $("caller-test").disabled =
       working || !current?.enabled || !current?.installed || dirty;
@@ -195,11 +196,17 @@
         );
         $("caller-toggle-label").textContent = current.enabled ? "On" : "Off";
         $("caller-settings").hidden = !current.enabled;
-        $("caller-state").textContent = !current.installed
-          ? "Choose a voice"
+        $("caller-state").textContent = ["downloading", "installing"].includes(
+          current.download.state,
+        )
+          ? "Preparing voice…"
           : current.error
             ? "Needs attention"
-            : "Ready";
+            : current.installed
+              ? "Ready"
+              : current.voice
+                ? "Voice unavailable"
+                : "Choose a voice";
         error(current.error || "");
         if (page === "caller") {
           const [catalogue, settings] = await Promise.all([
@@ -283,10 +290,10 @@
       notice("Caller settings saved.");
     });
   });
-  $("caller-install").addEventListener("click", () =>
+  $("caller-retry").addEventListener("click", () =>
     change(async () => {
       await api(
-        `/api/caller/voices/${encodeURIComponent($("caller-voice").value)}/install`,
+        `/api/caller/voices/${encodeURIComponent(current.voice)}/install`,
         "POST",
       );
     }),

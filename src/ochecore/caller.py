@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ochecore.autodarts.errors import ConnectionProblem
 from ochecore.events import Event, EventBus
 from ochecore.storage import write_private_json
-from ochecore.voices import VOICES, VoiceLibrary
+from ochecore.voices import VoiceLibrary
 
 GAME_MODES = (
     "X01",
@@ -268,6 +268,11 @@ class Caller:
         self.win_expires = 0.0
 
     def start(self) -> None:
+        if self.config.voice and not self.library.installed(self.config.voice):
+            try:
+                self.library.install(self.config.voice)
+            except ConnectionProblem as exc:
+                self.error = str(exc)
         if self.config.enabled and not self.tasks:
             self.tasks = [
                 asyncio.create_task(self._listen(), name="caller-events"),
@@ -275,11 +280,16 @@ class Caller:
             ]
 
     async def configure(self, config: CallerConfig) -> None:
-        if config.voice and config.voice not in VOICES:
-            raise ConnectionProblem("Choose a voice from the catalogue.")
+        self.library.check_selection(config.voice)
         write_private_json(self.path, config.model_dump())
         await self._close_tasks()
+        changed_voice = config.voice != self.config.voice
         self.config, self.error = config, None
+        if self.library.installed(config.voice) or (changed_voice and not config.voice):
+            try:
+                await self.library.keep_only(config.voice)
+            except OSError:
+                self.error = "Settings saved, but the previous voice cache could not be removed."
         self.start()
 
     def stop(self) -> None:
@@ -424,6 +434,8 @@ class Caller:
                     self.stop()
                     continue
                 for event, parts in plan_batch(events, self.config):
+                    if self.library.download["state"] in {"downloading", "installing"}:
+                        continue
                     if (time.time() - event.received_at.timestamp()) > 8:
                         continue
                     try:

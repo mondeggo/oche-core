@@ -151,6 +151,36 @@ class VoiceLibrary:
             self.task = asyncio.create_task(self._install(voice_id), name="caller-voice-install")
         return dict(self.download)
 
+    def check_selection(self, voice_id: str) -> None:
+        if voice_id and voice_id not in VOICES:
+            raise ConnectionProblem("Choose a voice from the catalogue.")
+        if self.task and not self.task.done() and self.download["voice_id"] != voice_id:
+            raise ConnectionProblem(
+                "Wait for the current voice installation before switching voices."
+            )
+
+    async def keep_only(self, voice_id: str) -> None:
+        """Remove only managed voice directories, after the replacement is available."""
+        root = self.directory.resolve()
+        candidates = [self.directory / key for key in VOICES if key != voice_id]
+
+        def remove_unused():
+            for path in candidates:
+                if not path.exists():
+                    continue
+                # Validate each absolute deletion target; never follow links or junctions.
+                if path.resolve().parent != root or path.is_symlink() or path.is_junction():
+                    raise OSError("Unsafe voice cache directory")
+                shutil.rmtree(path)
+
+        worker = asyncio.create_task(asyncio.to_thread(remove_unused))
+        try:
+            await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            await worker
+            raise
+        self.cache = {key: value for key, value in self.cache.items() if key == voice_id}
+
     async def _install(self, voice_id: str) -> None:
         stage = None
         try:
@@ -183,6 +213,12 @@ class VoiceLibrary:
                 raise
             pack.rename(self.directory / voice_id)
             self.cache[voice_id] = manifest
+            try:
+                await self.keep_only(voice_id)
+            except OSError:
+                self.download["error"] = (
+                    "Voice installed, but the previous cache could not be removed."
+                )
             self.download["state"] = "installed"
         except asyncio.CancelledError:
             self.download["state"] = "cancelled"
@@ -202,8 +238,12 @@ class VoiceLibrary:
             )
         finally:
             if stage is not None:
-                # stage is created above under this library; never remove caller-supplied paths.
-                await asyncio.to_thread(shutil.rmtree, stage, True)
+                if (
+                    stage.resolve().parent == self.directory.resolve()
+                    and not stage.is_symlink()
+                    and not stage.is_junction()
+                ):
+                    await asyncio.to_thread(shutil.rmtree, stage, True)
 
     async def close(self) -> None:
         if self.task and not self.task.done():

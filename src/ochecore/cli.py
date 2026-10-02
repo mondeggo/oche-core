@@ -98,7 +98,9 @@ def parser() -> argparse.ArgumentParser:
         actions.add_parser(name)
     voices = actions.add_parser("voices", help="List available and installed voices.")
     voices.add_argument("--language", help="Filter by language code, e.g. fr-FR.")
-    install = actions.add_parser("install", help="Download a voice in the background.")
+    install = actions.add_parser(
+        "install", help="Select and download a voice, replacing the cache."
+    )
     install.add_argument("voice")
     settings = actions.add_parser("config", help="Show or update caller settings.")
     settings.add_argument("--file", type=Path)
