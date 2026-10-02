@@ -5,9 +5,10 @@ const pages = {
   integrations: ["Integrations", "Enable the lights and audio you want to use."],
   autodarts: ["AutoDarts", "Manage your account and board connection."],
   wled: ["WLED", "Lighting effects for your game."],
+  caller: ["Caller", "Choose a voice and where to hear your game."],
   events: ["Events", "See what OcheCore receives from your board."],
 };
-const integrations = { wled: null };
+const integrations = { wled: null, caller: null };
 const labels = {
   unconfigured: "Not configured",
   disconnected: "Disconnected",
@@ -60,7 +61,7 @@ function navigate(focus = false) {
   const requested = location.hash.slice(1);
   if (requested === "main") return;
   page = Object.hasOwn(pages, requested) ? requested : "overview";
-  if (requested === "caller" || integrations[page] === false) {
+  if (integrations[page] === false) {
     page = "integrations";
     history.replaceState(null, "", "#integrations");
   }

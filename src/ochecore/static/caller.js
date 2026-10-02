@@ -1,0 +1,326 @@
+/* The service selects calls. This optional player only plays the supplied local clips. */
+(() => {
+  let voices = [],
+    config = null,
+    current = null,
+    dirty = false,
+    working = false,
+    polling = null;
+  let context = null,
+    socket = null,
+    source = null,
+    audioQueue = [],
+    playing = false,
+    generation = 0;
+  const flags = [
+    "turn_totals",
+    "checkouts",
+    "players",
+    "include_bots",
+    "local_only",
+  ];
+  const languages = new Intl.DisplayNames(["en"], { type: "language" });
+
+  function error(message = "") {
+    for (const id of ["caller-error", "caller-integration-error"]) {
+      $(id).textContent = message;
+      $(id).hidden = !message;
+    }
+  }
+
+  function options(selected) {
+    const language = $("caller-language").value;
+    const select = $("caller-voice");
+    select.replaceChildren(new Option("Choose a voice", ""));
+    voices
+      .filter((v) => v.language === language)
+      .forEach((v) => {
+        select.add(
+          new Option(
+            `${v.name} · ${v.provider}${v.installed ? " · Installed" : ""}`,
+            v.id,
+          ),
+        );
+      });
+    select.value = selected || "";
+    voiceState();
+  }
+
+  function voiceState() {
+    const voice = voices.find((v) => v.id === $("caller-voice").value);
+    const download = current?.download;
+    const installing = ["downloading", "installing"].includes(download?.state);
+    $("caller-install").disabled =
+      working || !voice || voice.installed || installing;
+    $("caller-install").textContent = voice?.installed
+      ? "Installed"
+      : "Install voice";
+    $("caller-preview").hidden = !voice;
+    if (voice) $("caller-preview").href = voice.preview_url;
+    $("caller-download").textContent = installing
+      ? `${download.state === "installing" ? "Installing" : "Downloading"} voice… ${Math.round(download.bytes / 1048576)} MiB${download.total ? ` / ${Math.round(download.total / 1048576)} MiB` : ""}`
+      : download?.error ||
+        (voice?.installed
+          ? "Installed locally. Ready to use."
+          : "Voice packs are downloaded once and kept locally.");
+    $("caller-save").disabled =
+      working || !dirty || !config || !voice?.installed;
+    $("caller-unsaved").hidden = !dirty;
+    $("caller-test").disabled =
+      working || !current?.enabled || !current?.installed || dirty;
+  }
+
+  function fill(value) {
+    config = value;
+    if (dirty) return;
+    const voice = voices.find((v) => v.id === value.voice);
+    const previous = $("caller-language").value;
+    $("caller-language").replaceChildren();
+    [...new Set(voices.map((v) => v.language))].sort().forEach((code) => {
+      $("caller-language").add(new Option(languages.of(code), code));
+    });
+    $("caller-language").value = voice?.language || previous || "en-GB";
+    options(value.voice);
+    $("caller-volume").value = Math.round(value.volume * 100);
+    $("caller-output").value = value.output;
+    $("caller-darts").value = value.darts;
+    flags.forEach((key) => {
+      $("caller-" + key).checked = value[key];
+    });
+  }
+
+  function stopAudio() {
+    generation++;
+    audioQueue = [];
+    if (source) {
+      source.stop();
+      source = null;
+    }
+  }
+
+  async function playQueue() {
+    if (playing || !context || context.state !== "running") return;
+    playing = true;
+    try {
+      while (audioQueue.length) {
+        const item = audioQueue.shift(),
+          version = generation;
+        if (item.expires_at * 1000 < Date.now()) continue;
+        for (const clip of item.clips) {
+          if (version !== generation || item.expires_at * 1000 < Date.now())
+            break;
+          const response = await fetch(clip.url, {
+            signal: AbortSignal.timeout(10000),
+          });
+          if (!response.ok)
+            throw new Error(
+              "Cannot load a voice clip. Check the installed pack.",
+            );
+          const buffer = await context.decodeAudioData(
+            await response.arrayBuffer(),
+          );
+          if (version !== generation) break;
+          const node = context.createBufferSource(),
+            gain = context.createGain();
+          source = node;
+          node.buffer = buffer;
+          gain.gain.value = item.volume;
+          node.connect(gain).connect(context.destination);
+          await new Promise((resolve) => {
+            node.onended = resolve;
+            node.start();
+            node.stop(context.currentTime + Math.min(buffer.duration, 12));
+          });
+          if (source === node) source = null;
+        }
+      }
+    } catch (cause) {
+      stopAudio();
+      $("caller-browser-state").textContent = cause.message;
+    } finally {
+      playing = false;
+    }
+  }
+
+  function syncPlayer() {
+    const wanted =
+      context &&
+      current?.enabled &&
+      ["browser", "both"].includes(current?.output);
+    $("caller-browser").hidden = !["browser", "both"].includes(current?.output);
+    if (!wanted) {
+      stopAudio();
+      if (socket) {
+        const old = socket;
+        socket = null;
+        old.close();
+      }
+      return;
+    }
+    if (socket) return;
+    const ws = new WebSocket(
+      `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/caller/audio`,
+    );
+    socket = ws;
+    ws.onopen = () => {
+      $("caller-browser-state").textContent = "Sound enabled on this browser";
+    };
+    ws.onmessage = (event) => {
+      const item = JSON.parse(event.data);
+      if (item.type === "stop") return stopAudio();
+      if (item.type !== "play") return;
+      if (audioQueue.length >= 16) audioQueue.shift();
+      audioQueue.push(item);
+      playQueue();
+    };
+    ws.onclose = () => {
+      if (socket !== ws) return;
+      socket = null;
+      stopAudio();
+      $("caller-browser-state").textContent =
+        "Sound disconnected. Reconnecting…";
+    };
+  }
+
+  async function refreshCaller() {
+    if (working || polling) return polling;
+    polling = (async () => {
+      try {
+        current = await api("/api/caller/status");
+        setIntegrationEnabled("caller", current.enabled);
+        $("caller-toggle").disabled = false;
+        $("caller-toggle").setAttribute(
+          "aria-checked",
+          String(current.enabled),
+        );
+        $("caller-toggle-label").textContent = current.enabled ? "On" : "Off";
+        $("caller-settings").hidden = !current.enabled;
+        $("caller-state").textContent = !current.installed
+          ? "Choose a voice"
+          : current.error
+            ? "Needs attention"
+            : "Ready";
+        error(current.error || "");
+        if (page === "caller") {
+          const [catalogue, settings] = await Promise.all([
+            api("/api/caller/voices"),
+            api("/api/caller"),
+          ]);
+          voices = catalogue;
+          fill(settings);
+        }
+        voiceState();
+        $("caller-test").disabled =
+          !current.enabled || !current.installed || dirty;
+        const last = current.recent_calls.at(-1);
+        $("caller-recent").textContent = current.missing_sounds.length
+          ? `Not in this pack: ${current.missing_sounds.join(", ")}`
+          : last
+            ? `Last call: ${last.sounds.join(" · ")}`
+            : "No calls yet.";
+        syncPlayer();
+      } catch (cause) {
+        error(cause.message || "Cannot reach Caller.");
+        $("caller-toggle").disabled =
+          $("caller-test").disabled =
+          $("caller-save").disabled =
+            true;
+      }
+    })().finally(() => {
+      polling = null;
+    });
+    return polling;
+  }
+
+  async function change(work) {
+    if (working) return;
+    working = true;
+    $("caller-toggle").disabled = true;
+    voiceState();
+    try {
+      await polling;
+      await work();
+    } catch (cause) {
+      notice(cause.message, true);
+    } finally {
+      working = false;
+      await refreshCaller();
+    }
+  }
+
+  $("caller-toggle").addEventListener("click", () =>
+    change(async () => {
+      const enabled = !current.enabled;
+      await api("/api/caller", "PATCH", { enabled });
+      setIntegrationEnabled("caller", enabled);
+      if (enabled) location.hash = "caller";
+    }),
+  );
+  $("caller-language").addEventListener("change", () => options(""));
+  $("caller-voice").addEventListener("change", voiceState);
+  $("caller-form").addEventListener("input", () => {
+    dirty = true;
+    voiceState();
+  });
+  $("caller-form").addEventListener("change", () => {
+    dirty = true;
+    voiceState();
+  });
+  $("caller-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    change(async () => {
+      const values = {
+        voice: $("caller-voice").value,
+        output: $("caller-output").value,
+        volume: Number($("caller-volume").value) / 100,
+        darts: $("caller-darts").value,
+      };
+      flags.forEach((key) => {
+        values[key] = $("caller-" + key).checked;
+      });
+      await api("/api/caller", "PATCH", values);
+      dirty = false;
+      notice("Caller settings saved.");
+    });
+  });
+  $("caller-install").addEventListener("click", () =>
+    change(async () => {
+      await api(
+        `/api/caller/voices/${encodeURIComponent($("caller-voice").value)}/install`,
+        "POST",
+      );
+    }),
+  );
+  $("caller-browser").addEventListener("click", async () => {
+    try {
+      context ||= new AudioContext();
+      await context.resume();
+      syncPlayer();
+    } catch {
+      $("caller-browser-state").textContent =
+        "This browser could not enable audio.";
+    }
+  });
+  $("caller-test").addEventListener("click", () =>
+    change(async () => {
+      const call = $("caller-test-call").value;
+      await api("/api/caller/test", "POST", {
+        call,
+        score: call === "checkout" ? 40 : 180,
+      });
+    }),
+  );
+  $("caller-stop").addEventListener("click", () =>
+    change(async () => {
+      stopAudio();
+      await api("/api/caller/stop", "POST");
+    }),
+  );
+  window.addEventListener("hashchange", refreshCaller);
+  window.addEventListener("pagehide", () => {
+    stopAudio();
+    socket?.close();
+  });
+  refreshCaller();
+  setInterval(refreshCaller, 2000);
+})();

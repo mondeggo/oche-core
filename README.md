@@ -6,14 +6,16 @@ OAuth device login, board discovery, automatic reconnection and normalized game 
 with separate raw AutoDarts streams. A small optional web interface uses the same API as the CLI.
 The service owns authentication, persistence and event processing and keeps running when
 either client closes. It starts without a configured board. WLED supports phase lighting,
-temporary game effects and numeric matrix scores. Audio, MQTT and Home Assistant are planned
-for later phases. X01 event interpretation is implemented and tested against
-the supplied reference contracts; full live gameplay acceptance remains to be done.
+temporary game effects and numeric matrix scores. Caller supports downloadable voices,
+host/browser playback and all 14 reference game modes. MQTT and Home Assistant remain planned.
+Event interpretation is tested against the supplied contracts; full live gameplay acceptance
+remains to be done.
 
 - [Project plan](docs/PLAN.md)
 - [API research](docs/AUTODARTS_API.md)
 - [Validation notes](docs/VALIDATION.md)
 - [Event API and normalization rules](docs/EVENTS.md)
+- [Caller voices, game modes and playback](docs/CALLER.md)
 
 ## Structure
 
@@ -30,6 +32,9 @@ OcheCore/
 │       ├── storage.py       # atomic persistence
 │       ├── events.py        # parsing, game event normalization and bounded dispatch
 │       ├── wled.py          # controllers, lighting targets, effects and matrix rendering
+│       ├── caller.py        # game announcements and host/browser audio controls
+│       ├── voices.py        # voice installation and local sound lookup
+│       ├── voices.json      # provider voice catalogue
 │       ├── autodarts/
 │       │   ├── auth.py
 │       │   ├── cloud.py     # cloud connection and match tracking
@@ -121,7 +126,7 @@ docker compose logs -f
 The same interface is available at <http://127.0.0.1:9180>. The container runs as a non-root
 user, stores persistent data in the project's `./data` folder and mounts `config/` read-only.
 AutoDarts Detection runs separately on the board computer; OcheCore does not access cameras.
-The `./data:/data` bind mount contains saved connection/WLED settings and OAuth tokens. It is
+The `./data:/data` bind mount contains connection/integration settings, voices and OAuth tokens. It is
 excluded from Git and Docker build context. Back up this folder to preserve the login.
 On Linux, create it before startup and give container UID/GID 10001 write access:
 `mkdir -p data && sudo chown 10001:10001 data && chmod 700 data`.
@@ -182,9 +187,11 @@ component mapping notes for the Oche app. It is a reference file, not loaded by 
   to inspect its JSON payload; the view updates automatically.
 - **All integrations** switches integrations on or off immediately. Enabled integrations appear
   below it in the sidebar; disabling them keeps their saved configuration. Changes through the
-  CLI or another browser also update navigation. Caller is marked as planned and cannot be enabled.
+  CLI or another browser also update navigation.
 - **WLED** manages controllers, lighting targets, phase colours, game effects and matrix
   scores. Saved targets have a timed test button; settings remain active when the page closes.
+- **Caller** selects and installs voices, chooses host/browser output and tests announcements.
+  See the [caller guide](docs/CALLER.md) for terminal controls and game-mode behavior.
 
 The interface uses plain HTML, CSS and JavaScript in `src/ochecore/static/`, without a frontend
 build step. Navigation stays in the browser; all controls use the same API as the terminal.

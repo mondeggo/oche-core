@@ -122,7 +122,7 @@ def test_newest_turn_is_first_and_locality_uses_board_not_account(frame, replay)
     add_dart(frame)
     replay(frame)
     next_turn(frame)
-    assert names(replay(frame)) == ["turn_end", "player_changed"]
+    assert names(replay(frame)) == ["turn_end", "player_changed", "turn_started"]
     add_dart(frame, dart("remote-dart"))
     events = replay(frame)
     assert names(events) == ["throw"]
@@ -228,7 +228,7 @@ def test_snapshot_reconnect_and_first_state_never_replay_actions(frame, replay):
 def test_partial_invalid_and_wrong_match_do_not_damage_baseline(frame, replay):
     add_dart(frame)
     assert names(replay(frame)) == ["throw"]
-    assert replay({"id": MATCH_ID, "activated": 1}) == []
+    assert names(replay({"id": MATCH_ID, "activated": 1})) == ["match_editing"]
     bad = deepcopy(frame)
     bad["turns"] = "wrong"
     assert replay(bad) == []
@@ -284,3 +284,18 @@ def test_reordered_roster_uses_array_position_for_winner(frame, replay):
     assert events[-1].event == "match_win"
     assert events[-1].data["player"]["id"] == "local-player"
     assert events[-1].data["player"]["index"] == 1
+
+
+def test_turn_context_for_solo_targets_and_partial_editing(frame, replay):
+    frame["variant"] = "ATC"
+    frame["state"] = {"targets": [[{"number": 5, "bed": "Double"}], []], "currentTargets": [0, 0]}
+    frame["turns"][0]["id"] = "solo-visit"
+    events = replay(frame)
+    started = next(event for event in events if event.event == "turn_started")
+    assert started.data["target"] == {"number": 5, "bed": "Double"}
+    assert started.data["remaining"] is None
+    assert started.data["game_score"] == 501
+    assert replay({"id": MATCH_ID, "activated": 1})[0].data["editing"] is True
+    assert replay({"id": MATCH_ID, "activated": -1})[0].data["editing"] is False
+    add_dart(frame)
+    assert replay(frame)[0].data["editing"] is False

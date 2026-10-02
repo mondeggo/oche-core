@@ -1,21 +1,44 @@
-# Connection, event and WLED validation
+# Connection, events and integration validation
 
-Updated October 2, 2026 after adding integration switches. Terminal controls and the optional
+Updated October 2, 2026 after implementing Caller. Terminal controls and the optional
 UI share the same headless service.
+
+## Caller
+
+All **150 Python tests** and Ruff checks pass. The built wheel includes Caller, the voice
+catalogue and UI assets. Compose configuration validates. The native service was restarted
+on `0.0.0.0:9180`; health, UI assets, caller status/configuration/catalogue and the caller CLI
+passed live checks. An empty PATCH verified routing without changing saved settings.
+
+Backend tests cover all 14 modes from Tools for AutoDarts, CountUp aliases and Cricket/Tactics
+settings. The mode tests vary the common reference match envelope and check silent baselines,
+visit scores, wins and reconnects. Separate cases cover checkout reachability, target context,
+win/bust priority, bot/local filters, correction cancellation, stale events, serial playback,
+headless API/CLI controls, settings persistence, archive limits and safe file paths.
+
+The French Rémi pack was downloaded from the provider: its outer ZIP contains a CSV and an
+audio ZIP with 18,913 MP3 files. Installation produced 16,757 sound keys, including aliases and
+`+N` variants. Real score, bust, win and triple clips decoded successfully with SDL's dummy
+audio device; this does not validate physical speakers. The installed pack is in ignored
+`data/voices/`; Caller remains disabled by default.
+
+Temporary DOM checks passed Caller activation/navigation, French voice selection, download
+progress, configuration save, manual tests, draft preservation, external API changes and
+failed/offline controls. Browser rendering and audible playback remain to be checked manually.
+The Docker rebuild was attempted again and timed out before producing build output.
 
 ## Integration navigation and activation
 
 AutoDarts now sits with Overview and Events in the main navigation. The Integrations heading
 is separated by a divider; All integrations contains activation switches. WLED appears in
-the sidebar only while enabled. Caller remains an unavailable entry in the list; its empty
-detail page and old navigation code were removed.
+the sidebar only while enabled. Caller now follows the same activation behavior.
 
 `PATCH /api/wled` merges supplied top-level configuration fields under the existing service
 lock. UI switches and CLI activation change only `enabled`; device saves replace only the
 device list. Saving an older form cannot undo a separate integration-disable request.
 Saved configuration survives disable/re-enable and service restarts.
 
-All **119 Python tests** passed, including new partial-update preservation, restart, validation,
+Before Caller was added, all **119 Python tests** passed, including partial-update preservation, restart, validation,
 origin and content-type checks. Temporary DOM checks passed activation, conditional navigation,
 disabled deep links, external CLI changes, retained form drafts, failed/duplicate switch
 requests, offline recovery and the existing WLED discovery/editor flows. Theme checks still

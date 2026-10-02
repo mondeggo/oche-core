@@ -160,6 +160,7 @@ class Turn(BaseModel):
     player: int | None = Field(default=None, ge=0, strict=True)
     round: int | None = Field(default=None, ge=0, strict=True)
     points: int | None = Field(default=None, strict=True)
+    score: int | None = Field(default=None, strict=True)
     busted: bool = False
     finished_at: str | None = Field(default=None, alias="finishedAt")
     throws: list[Dart] = Field(default_factory=list, max_length=3)
@@ -196,12 +197,17 @@ class MatchFrame(BaseModel):
     game_scores: list[int] = Field(default_factory=list, alias="gameScores")
     game_winner: int = Field(default=-1, alias="gameWinner", ge=-1, strict=True)
     winner: int = Field(default=-1, ge=-1, strict=True)
+    settings: dict[str, Any] = Field(default_factory=dict)
+    state: dict[str, Any] = Field(default_factory=dict)
+    activated: int = -1
 
 
 GameEventName = Literal[
     "match_started",
     "match_ended",
     "player_changed",
+    "turn_started",
+    "match_editing",
     "throw",
     "throw_corrected",
     "throw_removed",
@@ -237,6 +243,7 @@ class EventNormalizer:
         self.readiness: str | None = None
         self.state_valid = False
         self.takeout_is_local = False
+        self.editing = False
 
     def select(self, match_id: str | None) -> None:
         if match_id == self.match_id:
@@ -250,9 +257,11 @@ class EventNormalizer:
         self.readiness = None
         self.state_valid = False
         self.takeout_is_local = False
+        self.editing = False
 
     def resync(self) -> None:
         self.synchronized = False
+        self.editing = False
         self.state_valid = False
         self.takeout_is_local = False
         self.readiness = None
@@ -364,6 +373,21 @@ class EventNormalizer:
             elif turn.player is not None:
                 index = turn.player
         player = frame.players[index] if 0 <= index < len(frame.players) else None
+        score = frame.game_scores[index] if 0 <= index < len(frame.game_scores) else None
+        targets = frame.state.get("targets")
+        target = targets[index] if isinstance(targets, list) and 0 <= index < len(targets) else None
+        current_targets = frame.state.get("currentTargets")
+        if isinstance(target, list) and isinstance(current_targets, list):
+            position = current_targets[index] if 0 <= index < len(current_targets) else None
+            target = (
+                target[position]
+                if isinstance(position, int) and 0 <= position < len(target)
+                else None
+            )
+        guide = frame.state.get("checkoutGuide")
+        guides = frame.state.get("checkoutGuides")
+        if isinstance(guides, list) and 0 <= index < len(guides):
+            guide = guides[index]
         result.update(
             {
                 "variant": frame.variant,
@@ -372,9 +396,13 @@ class EventNormalizer:
                 "round": turn.round if turn and turn.round is not None else frame.round,
                 "turn_id": turn.id if turn else None,
                 "player": player.public(index, self.board_id) if player else None,
-                "remaining": frame.game_scores[index]
-                if 0 <= index < len(frame.game_scores)
-                else None,
+                "game_score": score,
+                "remaining": score if frame.variant in {"X01", "Random Checkout", "121"} else None,
+                "turn_total": turn.score if turn else None,
+                "settings": frame.settings,
+                "target": target if isinstance(target, dict) else None,
+                "checkout_available": bool(guide),
+                "editing": self.editing,
             }
         )
         return result
@@ -446,6 +474,18 @@ class EventNormalizer:
             self.takeout_context = None
 
     def _match_state(self, raw: Event) -> None:
+        if raw.data.get("id", self.match_id) != self.match_id:
+            return
+        if "activated" in raw.data and isinstance(raw.data["activated"], int):
+            editing = raw.data["activated"] >= 0
+            if editing != self.editing:
+                self.editing = editing
+                self._emit(
+                    "match_editing",
+                    raw,
+                    {**self._context(self.frame), "editing": editing},
+                    silent=raw.snapshot or not self.synchronized,
+                )
         # Activation-only updates are not full scoring states.
         if "turns" not in raw.data:
             return
@@ -493,6 +533,17 @@ class EventNormalizer:
                         )
             if previous and frame.players[frame.player].id != previous.players[previous.player].id:
                 self._emit("player_changed", raw, self._context(frame))
+            if current and self._key(frame, current) not in self.turns:
+                self._emit(
+                    "turn_started",
+                    raw,
+                    {
+                        **self._context(frame, current),
+                        "leg_start": bool(
+                            previous and (frame.set, frame.leg) != (previous.set, previous.leg)
+                        ),
+                    },
+                )
             if current:
                 self._darts(raw, frame, current)
                 self._outcomes(raw, frame, current)

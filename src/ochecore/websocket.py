@@ -18,7 +18,12 @@ async def raw_websocket_events(ws: WebSocket):
     await stream_events(ws, raw=True)
 
 
-async def stream_events(ws: WebSocket, raw: bool):
+@router.websocket("/caller/audio")
+async def caller_audio(ws: WebSocket):
+    await stream_events(ws, raw=True, caller=True)
+
+
+async def stream_events(ws: WebSocket, raw: bool, caller: bool = False):
     scheme = "https" if ws.url.scheme == "wss" else "http"
     if not same_origin(ws.headers.get("origin"), ws.headers.get("host", ""), scheme):
         await ws.close(code=1008)
@@ -38,7 +43,12 @@ async def stream_events(ws: WebSocket, raw: bool):
             payload = event if raw else event.model_dump(mode="json")
             await asyncio.wait_for(ws.send_json(payload), timeout=10)
 
-    with runtime.bus.subscribe(mode="raw" if raw else "normalized") as queue:
+    subscription = (
+        runtime.caller.subscribe()
+        if caller
+        else runtime.bus.subscribe(mode="raw" if raw else "normalized")
+    )
+    with subscription as queue:
         try:
             async with anyio.create_task_group() as group:
 

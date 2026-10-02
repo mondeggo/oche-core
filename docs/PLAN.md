@@ -76,6 +76,18 @@ and correct local/remote player attribution.
 
 ## Phase 3 — Rules, WLED and caller
 
+First caller implementation:
+
+- [x] Persisted settings, API/CLI controls and optional Caller page with integration toggle.
+- [x] Peschi voice catalogue, previews, background installation and offline sound lookup.
+- [x] Host playback and optional browser output, volume and announcement controls.
+- [x] Calls for all 14 reference modes, including CountUp aliases and Cricket/Tactics.
+- [x] Serial bounded playback, correction cancellation, win priority and silent reconnects.
+- [x] Synthetic mode replays, installer tests and a real French pack decode check.
+- [ ] Physical audio acceptance and live matches in each mode.
+
+See [Caller](CALLER.md) for the supported calls, source comparison and setup.
+
 First WLED implementation:
 
 - [x] Persisted controller/target settings, CLI/API controls and optional WLED UI.
@@ -88,7 +100,7 @@ First WLED implementation:
 - [x] Local mDNS discovery with API verification, CLI access and an explicit Add action in the UI.
 - [ ] Live phase/readiness and physical matrix acceptance with the installed hardware.
 - [ ] Native whole-device preset actions, matrix player names and scrolling messages.
-- [ ] Caller integration and shared profiles/rules if needed across integrations.
+- [ ] Shared profiles/rules if needed across integrations.
 
 The implemented settings are documented in the [README](../README.md#wled-lighting-and-matrix-scores).
 The broader scope and remaining delivery goals follow.
@@ -98,7 +110,7 @@ The broader scope and remaining delivery goals follow.
    `data/`; CLI and the optional UI read and edit them through the service API.
 3. Implement `wled.py`: device/segment/pixel controls, phase lighting and a matrix scoreboard
    as specified below, with multiple devices and rate limits.
-4. Implement `caller.py`: user-provided sounds, then player names and checkout announcements.
+4. Extend caller support with custom user-provided packs if needed.
    Choose browser or host audio based on deployment needs.
 5. Initial rules: triple, bull, 180, bust and victory; define priority and cancellation.
 
@@ -198,7 +210,7 @@ publish a documented schema.
 
 Live development checks use the configured `darts-caller` Client ID. Authentication with an
 OAuth Client ID assigned to OcheCore still needs verification before distribution.
-Upstream payloads may change. Caller, shared profiles and a durable event log remain planned.
+Upstream payloads may change. Shared profiles and a durable event log remain planned.
 A healthy process does not imply a connected board or controller.
 
 All maintained project content uses English. Preserve the source brief and third-party references.

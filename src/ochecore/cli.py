@@ -16,6 +16,7 @@ from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect
 
 from ochecore import __version__
+from ochecore.caller import CallerConfig
 from ochecore.config import Settings
 from ochecore.wled import WLEDConfig
 
@@ -91,6 +92,24 @@ def parser() -> argparse.ArgumentParser:
     for name in ("enable", "disable"):
         command = actions.add_parser(name, help=f"{name.capitalize()} WLED or a saved device.")
         command.add_argument("device", nargs="?")
+    caller = commands.add_parser("caller", help="Configure voices and control game announcements.")
+    actions = caller.add_subparsers(dest="caller_command", required=True)
+    for name in ("status", "enable", "disable", "stop"):
+        actions.add_parser(name)
+    voices = actions.add_parser("voices", help="List available and installed voices.")
+    voices.add_argument("--language", help="Filter by language code, e.g. fr-FR.")
+    install = actions.add_parser("install", help="Download a voice in the background.")
+    install.add_argument("voice")
+    settings = actions.add_parser("config", help="Show or update caller settings.")
+    settings.add_argument("--file", type=Path)
+    settings.add_argument("--voice")
+    settings.add_argument("--volume", type=float)
+    settings.add_argument("--output", choices=["host", "browser", "both"])
+    preview = actions.add_parser("test", help="Play a sample through the selected output.")
+    preview.add_argument(
+        "--call", choices=["score", "bust", "win", "checkout", "bull"], default="score"
+    )
+    preview.add_argument("--score", type=int, default=180)
     return root
 
 
@@ -188,6 +207,8 @@ def execute(args, client) -> int:
         print_json(request(client, "GET", "/api/game"))
     elif args.command == "wled":
         execute_wled(args, client)
+    elif args.command == "caller":
+        execute_caller(args, client)
     return 0
 
 
@@ -235,6 +256,46 @@ def execute_wled(args, client) -> None:
             }
         )
         print_json(request(client, "POST", f"/api/wled/{device}/{command}", body))
+
+
+def execute_caller(args, client) -> None:
+    command = args.caller_command
+    if command == "config":
+        if args.file:
+            try:
+                config = CallerConfig.model_validate_json(args.file.read_text(encoding="utf-8-sig"))
+            except (ValueError, OSError) as exc:
+                raise ControlError(
+                    "Cannot load caller configuration. Check the JSON file."
+                ) from exc
+            request(client, "PUT", "/api/caller", config.model_dump())
+        updates = {
+            key: getattr(args, key)
+            for key in ("voice", "volume", "output")
+            if getattr(args, key) is not None
+        }
+        if updates:
+            request(client, "PATCH", "/api/caller", updates)
+        print_json(request(client, "GET", "/api/caller"))
+    elif command in {"enable", "disable"}:
+        print_json(request(client, "PATCH", "/api/caller", {"enabled": command == "enable"}))
+    elif command == "voices":
+        voices = request(client, "GET", "/api/caller/voices")
+        print_json([v for v in voices if not args.language or v["language"] == args.language])
+    elif command == "install":
+        from ochecore.voices import VOICES
+
+        if args.voice not in VOICES:
+            raise ControlError("Unknown voice. Run caller voices to find its ID.")
+        print_json(request(client, "POST", f"/api/caller/voices/{args.voice}/install"))
+    elif command == "test":
+        print_json(
+            request(client, "POST", "/api/caller/test", {"call": args.call, "score": args.score})
+        )
+    else:
+        print_json(
+            request(client, "GET" if command == "status" else "POST", f"/api/caller/{command}")
+        )
 
 
 def run(argv=None) -> int:

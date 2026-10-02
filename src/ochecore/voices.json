@@ -1,0 +1,818 @@
+[
+  {
+    "id": "amazon-nl-nl-laura-female",
+    "name": "Laura Female",
+    "language": "nl-NL",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/nl-NL-Laura-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=nl-NL&caller=Laura-Female"
+  },
+  {
+    "id": "amazon-fr-fr-remi-male",
+    "name": "Remi Male",
+    "language": "fr-FR",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/fr-FR-Remi-Male.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=Remi-Male"
+  },
+  {
+    "id": "amazon-fr-fr-lea-female",
+    "name": "Lea Female",
+    "language": "fr-FR",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/fr-FR-Lea-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=Lea-Female"
+  },
+  {
+    "id": "amazon-es-es-lucia-female",
+    "name": "Lucia Female",
+    "language": "es-ES",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/es-ES-Lucia-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=Lucia-Female"
+  },
+  {
+    "id": "amazon-es-es-sergio-male",
+    "name": "Sergio Male",
+    "language": "es-ES",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/es-ES-Sergio-Male.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=Sergio-Male"
+  },
+  {
+    "id": "amazon-de-at-hannah-female",
+    "name": "Hannah Female",
+    "language": "de-AT",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/de-AT-Hannah-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-AT&caller=Hannah-Female"
+  },
+  {
+    "id": "amazon-de-de-vicki-female",
+    "name": "Vicki Female",
+    "language": "de-DE",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/de-DE-Vicki-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=Vicki-Female"
+  },
+  {
+    "id": "amazon-de-de-daniel-male",
+    "name": "Daniel Male",
+    "language": "de-DE",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/de-DE-Daniel-Male.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=Daniel-Male"
+  },
+  {
+    "id": "amazon-en-us-ivy-female",
+    "name": "Ivy Female",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Ivy-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Ivy-Female"
+  },
+  {
+    "id": "amazon-en-us-joey-male",
+    "name": "Joey Male",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Joey-Male.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Joey-Male"
+  },
+  {
+    "id": "amazon-en-us-joanna-female",
+    "name": "Joanna Female",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Joanna-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Joanna-Female"
+  },
+  {
+    "id": "amazon-en-us-matthew-male",
+    "name": "Matthew Male",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Matthew-Male.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Matthew-Male"
+  },
+  {
+    "id": "amazon-en-us-danielle-female",
+    "name": "Danielle Female",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Danielle-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Danielle-Female"
+  },
+  {
+    "id": "amazon-en-us-kimberly-female",
+    "name": "Kimberly Female",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Kimberly-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Kimberly-Female"
+  },
+  {
+    "id": "amazon-en-us-ruth-female",
+    "name": "Ruth Female",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Ruth-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Ruth-Female"
+  },
+  {
+    "id": "amazon-en-us-salli-female",
+    "name": "Salli Female",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Salli-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Salli-Female"
+  },
+  {
+    "id": "amazon-en-us-kevin-male",
+    "name": "Kevin Male",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Kevin-Male.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Kevin-Male"
+  },
+  {
+    "id": "amazon-en-us-justin-male",
+    "name": "Justin Male",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Justin-Male.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Justin-Male"
+  },
+  {
+    "id": "amazon-en-us-stephen-male",
+    "name": "Stephen Male",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Stephen-Male.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Stephen-Male"
+  },
+  {
+    "id": "amazon-en-us-kendra-female",
+    "name": "Kendra Female",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Kendra-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Kendra-Female"
+  },
+  {
+    "id": "amazon-en-us-gregory-male",
+    "name": "Gregory Male",
+    "language": "en-US",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-US-Gregory-Male.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Gregory-Male"
+  },
+  {
+    "id": "amazon-en-gb-amy-female",
+    "name": "Amy Female",
+    "language": "en-GB",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-GB-Amy-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=Amy-Female"
+  },
+  {
+    "id": "amazon-en-gb-arthur-male",
+    "name": "Arthur Male",
+    "language": "en-GB",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-GB-Arthur-Male.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=Arthur-Male"
+  },
+  {
+    "id": "amazon-en-gb-brian-male",
+    "name": "Brian Male",
+    "language": "en-GB",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-GB-Brian-Male.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=Brian-Male"
+  },
+  {
+    "id": "amazon-en-gb-emma-female",
+    "name": "Emma Female",
+    "language": "en-GB",
+    "provider": "amazon",
+    "url": "https://darts-downloads.peschi.org/soundfiles/amazon/en-GB-Emma-Female.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=Emma-Female"
+  },
+  {
+    "id": "google-de-de-chirp3-hd-achird-male",
+    "name": "Chirp3 HD Achird MALE",
+    "language": "de-DE",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/de-DE-Chirp3-HD-Achird-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=Chirp3-HD-Achird-MALE"
+  },
+  {
+    "id": "google-de-de-chirp3-hd-algenib-male",
+    "name": "Chirp3 HD Algenib MALE",
+    "language": "de-DE",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/de-DE-Chirp3-HD-Algenib-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=Chirp3-HD-Algenib-MALE"
+  },
+  {
+    "id": "google-de-de-chirp3-hd-alnilam-male",
+    "name": "Chirp3 HD Alnilam MALE",
+    "language": "de-DE",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/de-DE-Chirp3-HD-Alnilam-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=Chirp3-HD-Alnilam-MALE"
+  },
+  {
+    "id": "google-de-de-chirp3-hd-aoede-female",
+    "name": "Chirp3 HD Aoede FEMALE",
+    "language": "de-DE",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/de-DE-Chirp3-HD-Aoede-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=Chirp3-HD-Aoede-FEMALE"
+  },
+  {
+    "id": "google-de-de-chirp3-hd-enceladus-male",
+    "name": "Chirp3 HD Enceladus MALE",
+    "language": "de-DE",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/de-DE-Chirp3-HD-Enceladus-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=Chirp3-HD-Enceladus-MALE"
+  },
+  {
+    "id": "google-de-de-chirp3-hd-puck-male",
+    "name": "Chirp3 HD Puck MALE",
+    "language": "de-DE",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/de-DE-Chirp3-HD-Puck-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=Chirp3-HD-Puck-MALE"
+  },
+  {
+    "id": "google-de-de-chirp3-hd-schedar-male",
+    "name": "Chirp3 HD Schedar MALE",
+    "language": "de-DE",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/de-DE-Chirp3-HD-Schedar-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=Chirp3-HD-Schedar-MALE"
+  },
+  {
+    "id": "google-en-gb-chirp3-hd-achird-male",
+    "name": "Chirp3 HD Achird MALE",
+    "language": "en-GB",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/en-GB-Chirp3-HD-Achird-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=Chirp3-HD-Achird-MALE"
+  },
+  {
+    "id": "google-en-gb-chirp3-hd-algenib-male",
+    "name": "Chirp3 HD Algenib MALE",
+    "language": "en-GB",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/en-GB-Chirp3-HD-Algenib-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=Chirp3-HD-Algenib-MALE"
+  },
+  {
+    "id": "google-en-gb-chirp3-hd-alnilam-male",
+    "name": "Chirp3 HD Alnilam MALE",
+    "language": "en-GB",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/en-GB-Chirp3-HD-Alnilam-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=Chirp3-HD-Alnilam-MALE"
+  },
+  {
+    "id": "google-en-gb-chirp3-hd-enceladus-male",
+    "name": "Chirp3 HD Enceladus MALE",
+    "language": "en-GB",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/en-GB-Chirp3-HD-Enceladus-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=Chirp3-HD-Enceladus-MALE"
+  },
+  {
+    "id": "google-en-gb-chirp3-hd-puck-male",
+    "name": "Chirp3 HD Puck MALE",
+    "language": "en-GB",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/en-GB-Chirp3-HD-Puck-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=Chirp3-HD-Puck-MALE"
+  },
+  {
+    "id": "google-en-us-chirp3-hd-achird-male",
+    "name": "Chirp3 HD Achird MALE",
+    "language": "en-US",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/en-US-Chirp3-HD-Achird-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Chirp3-HD-Achird-MALE"
+  },
+  {
+    "id": "google-en-us-chirp3-hd-algenib-male",
+    "name": "Chirp3 HD Algenib MALE",
+    "language": "en-US",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/en-US-Chirp3-HD-Algenib-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Chirp3-HD-Algenib-MALE"
+  },
+  {
+    "id": "google-en-us-chirp3-hd-alnilam-male",
+    "name": "Chirp3 HD Alnilam MALE",
+    "language": "en-US",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/en-US-Chirp3-HD-Alnilam-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Chirp3-HD-Alnilam-MALE"
+  },
+  {
+    "id": "google-en-us-chirp3-hd-enceladus-male",
+    "name": "Chirp3 HD Enceladus MALE",
+    "language": "en-US",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/en-US-Chirp3-HD-Enceladus-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Chirp3-HD-Enceladus-MALE"
+  },
+  {
+    "id": "google-en-us-chirp3-hd-puck-male",
+    "name": "Chirp3 HD Puck MALE",
+    "language": "en-US",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/en-US-Chirp3-HD-Puck-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=Chirp3-HD-Puck-MALE"
+  },
+  {
+    "id": "google-es-es-chirp3-hd-achird-male",
+    "name": "Chirp3 HD Achird MALE",
+    "language": "es-ES",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/es-ES-Chirp3-HD-Achird-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=Chirp3-HD-Achird-MALE"
+  },
+  {
+    "id": "google-es-es-chirp3-hd-algenib-male",
+    "name": "Chirp3 HD Algenib MALE",
+    "language": "es-ES",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/es-ES-Chirp3-HD-Algenib-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=Chirp3-HD-Algenib-MALE"
+  },
+  {
+    "id": "google-es-es-chirp3-hd-alnilam-male",
+    "name": "Chirp3 HD Alnilam MALE",
+    "language": "es-ES",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/es-ES-Chirp3-HD-Alnilam-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=Chirp3-HD-Alnilam-MALE"
+  },
+  {
+    "id": "google-es-es-chirp3-hd-enceladus-male",
+    "name": "Chirp3 HD Enceladus MALE",
+    "language": "es-ES",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/es-ES-Chirp3-HD-Enceladus-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=Chirp3-HD-Enceladus-MALE"
+  },
+  {
+    "id": "google-es-es-chirp3-hd-puck-male",
+    "name": "Chirp3 HD Puck MALE",
+    "language": "es-ES",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/es-ES-Chirp3-HD-Puck-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=Chirp3-HD-Puck-MALE"
+  },
+  {
+    "id": "google-fr-fr-chirp3-hd-achird-male",
+    "name": "Chirp3 HD Achird MALE",
+    "language": "fr-FR",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/fr-FR-Chirp3-HD-Achird-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=Chirp3-HD-Achird-MALE"
+  },
+  {
+    "id": "google-fr-fr-chirp3-hd-algenib-male",
+    "name": "Chirp3 HD Algenib MALE",
+    "language": "fr-FR",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/fr-FR-Chirp3-HD-Algenib-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=Chirp3-HD-Algenib-MALE"
+  },
+  {
+    "id": "google-fr-fr-chirp3-hd-alnilam-male",
+    "name": "Chirp3 HD Alnilam MALE",
+    "language": "fr-FR",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/fr-FR-Chirp3-HD-Alnilam-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=Chirp3-HD-Alnilam-MALE"
+  },
+  {
+    "id": "google-fr-fr-chirp3-hd-enceladus-male",
+    "name": "Chirp3 HD Enceladus MALE",
+    "language": "fr-FR",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/fr-FR-Chirp3-HD-Enceladus-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=Chirp3-HD-Enceladus-MALE"
+  },
+  {
+    "id": "google-fr-fr-chirp3-hd-puck-male",
+    "name": "Chirp3 HD Puck MALE",
+    "language": "fr-FR",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/fr-FR-Chirp3-HD-Puck-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=Chirp3-HD-Puck-MALE"
+  },
+  {
+    "id": "google-it-it-chirp3-hd-achird-male",
+    "name": "Chirp3 HD Achird MALE",
+    "language": "it-IT",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/it-IT-Chirp3-HD-Achird-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=it-IT&caller=Chirp3-HD-Achird-MALE"
+  },
+  {
+    "id": "google-it-it-chirp3-hd-enceladus-male",
+    "name": "Chirp3 HD Enceladus MALE",
+    "language": "it-IT",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/it-IT-Chirp3-HD-Enceladus-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=it-IT&caller=Chirp3-HD-Enceladus-MALE"
+  },
+  {
+    "id": "google-it-it-chirp3-hd-puck-male",
+    "name": "Chirp3 HD Puck MALE",
+    "language": "it-IT",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/it-IT-Chirp3-HD-Puck-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=it-IT&caller=Chirp3-HD-Puck-MALE"
+  },
+  {
+    "id": "google-nl-nl-chirp3-hd-achird-male",
+    "name": "Chirp3 HD Achird MALE",
+    "language": "nl-NL",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/nl-NL-Chirp3-HD-Achird-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=nl-NL&caller=Chirp3-HD-Achird-MALE"
+  },
+  {
+    "id": "google-nl-nl-chirp3-hd-algenib-male",
+    "name": "Chirp3 HD Algenib MALE",
+    "language": "nl-NL",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/nl-NL-Chirp3-HD-Algenib-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=nl-NL&caller=Chirp3-HD-Algenib-MALE"
+  },
+  {
+    "id": "google-nl-nl-chirp3-hd-alnilam-male",
+    "name": "Chirp3 HD Alnilam MALE",
+    "language": "nl-NL",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/nl-NL-Chirp3-HD-Alnilam-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=nl-NL&caller=Chirp3-HD-Alnilam-MALE"
+  },
+  {
+    "id": "google-nl-nl-chirp3-hd-enceladus-male",
+    "name": "Chirp3 HD Enceladus MALE",
+    "language": "nl-NL",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/nl-NL-Chirp3-HD-Enceladus-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=nl-NL&caller=Chirp3-HD-Enceladus-MALE"
+  },
+  {
+    "id": "google-nl-nl-chirp3-hd-puck-male",
+    "name": "Chirp3 HD Puck MALE",
+    "language": "nl-NL",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/nl-NL-Chirp3-HD-Puck-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=nl-NL&caller=Chirp3-HD-Puck-MALE"
+  },
+  {
+    "id": "google-ru-ru-chirp3-hd-aoede-female",
+    "name": "Chirp3 HD Aoede FEMALE",
+    "language": "ru-RU",
+    "provider": "google",
+    "url": "https://darts-downloads.peschi.org/soundfiles/google/ru-RU-Chirp3-HD-Aoede-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=ru-RU&caller=Chirp3-HD-Aoede-FEMALE"
+  },
+  {
+    "id": "openai-de-de-ash-male",
+    "name": "ash MALE",
+    "language": "de-DE",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/de-DE-ash-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=ash-MALE"
+  },
+  {
+    "id": "openai-de-de-ballad-male",
+    "name": "ballad MALE",
+    "language": "de-DE",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/de-DE-ballad-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=ballad-MALE"
+  },
+  {
+    "id": "openai-de-de-coral-female",
+    "name": "coral FEMALE",
+    "language": "de-DE",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/de-DE-coral-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=coral-FEMALE"
+  },
+  {
+    "id": "openai-de-de-onyx-male",
+    "name": "onyx MALE",
+    "language": "de-DE",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/de-DE-onyx-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=onyx-MALE"
+  },
+  {
+    "id": "openai-de-de-sage-female",
+    "name": "sage FEMALE",
+    "language": "de-DE",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/de-DE-sage-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=de-DE&caller=sage-FEMALE"
+  },
+  {
+    "id": "openai-en-gb-ash-male",
+    "name": "ash MALE",
+    "language": "en-GB",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/en-GB-ash-MALE-v2.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=ash-MALE"
+  },
+  {
+    "id": "openai-en-gb-ballad-male",
+    "name": "ballad MALE",
+    "language": "en-GB",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/en-GB-ballad-MALE-v2.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=ballad-MALE"
+  },
+  {
+    "id": "openai-en-gb-coral-female",
+    "name": "coral FEMALE",
+    "language": "en-GB",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/en-GB-coral-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=coral-FEMALE"
+  },
+  {
+    "id": "openai-en-gb-onyx-male",
+    "name": "onyx MALE",
+    "language": "en-GB",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/en-GB-onyx-MALE-v2.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=onyx-MALE"
+  },
+  {
+    "id": "openai-en-gb-sage-female",
+    "name": "sage FEMALE",
+    "language": "en-GB",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/en-GB-sage-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=sage-FEMALE"
+  },
+  {
+    "id": "openai-en-gb-verse-male",
+    "name": "verse MALE",
+    "language": "en-GB",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/en-GB-verse-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-GB&caller=verse-MALE"
+  },
+  {
+    "id": "openai-en-us-ash-male",
+    "name": "ash MALE",
+    "language": "en-US",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/en-US-ash-MALE-v2.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=ash-MALE"
+  },
+  {
+    "id": "openai-en-us-ballad-male",
+    "name": "ballad MALE",
+    "language": "en-US",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/en-US-ballad-MALE-v2.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=ballad-MALE"
+  },
+  {
+    "id": "openai-en-us-coral-female",
+    "name": "coral FEMALE",
+    "language": "en-US",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/en-US-coral-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=coral-FEMALE"
+  },
+  {
+    "id": "openai-en-us-onyx-male",
+    "name": "onyx MALE",
+    "language": "en-US",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/en-US-onyx-MALE-v2.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=onyx-MALE"
+  },
+  {
+    "id": "openai-en-us-sage-female",
+    "name": "sage FEMALE",
+    "language": "en-US",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/en-US-sage-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=en-US&caller=sage-FEMALE"
+  },
+  {
+    "id": "openai-es-es-ash-male",
+    "name": "ash MALE",
+    "language": "es-ES",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/es-ES-ash-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=ash-MALE"
+  },
+  {
+    "id": "openai-es-es-ballad-male",
+    "name": "ballad MALE",
+    "language": "es-ES",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/es-ES-ballad-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=ballad-MALE"
+  },
+  {
+    "id": "openai-es-es-coral-female",
+    "name": "coral FEMALE",
+    "language": "es-ES",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/es-ES-coral-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=coral-FEMALE"
+  },
+  {
+    "id": "openai-es-es-onyx-male",
+    "name": "onyx MALE",
+    "language": "es-ES",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/es-ES-onyx-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=onyx-MALE"
+  },
+  {
+    "id": "openai-es-es-sage-female",
+    "name": "sage FEMALE",
+    "language": "es-ES",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/es-ES-sage-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=es-ES&caller=sage-FEMALE"
+  },
+  {
+    "id": "openai-fr-fr-ash-male",
+    "name": "ash MALE",
+    "language": "fr-FR",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/fr-FR-ash-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=ash-MALE"
+  },
+  {
+    "id": "openai-fr-fr-ballad-male",
+    "name": "ballad MALE",
+    "language": "fr-FR",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/fr-FR-ballad-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=ballad-MALE"
+  },
+  {
+    "id": "openai-fr-fr-coral-female",
+    "name": "coral FEMALE",
+    "language": "fr-FR",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/fr-FR-coral-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=coral-FEMALE"
+  },
+  {
+    "id": "openai-fr-fr-onyx-male",
+    "name": "onyx MALE",
+    "language": "fr-FR",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/fr-FR-onyx-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=onyx-MALE"
+  },
+  {
+    "id": "openai-fr-fr-sage-female",
+    "name": "sage FEMALE",
+    "language": "fr-FR",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/fr-FR-sage-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=fr-FR&caller=sage-FEMALE"
+  },
+  {
+    "id": "openai-it-it-ash-male",
+    "name": "ash MALE",
+    "language": "it-IT",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/it-IT-ash-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=it-IT&caller=ash-MALE"
+  },
+  {
+    "id": "openai-it-it-ballad-male",
+    "name": "ballad MALE",
+    "language": "it-IT",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/it-IT-ballad-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=it-IT&caller=ballad-MALE"
+  },
+  {
+    "id": "openai-it-it-coral-female",
+    "name": "coral FEMALE",
+    "language": "it-IT",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/it-IT-coral-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=it-IT&caller=coral-FEMALE"
+  },
+  {
+    "id": "openai-it-it-onyx-male",
+    "name": "onyx MALE",
+    "language": "it-IT",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/it-IT-onyx-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=it-IT&caller=onyx-MALE"
+  },
+  {
+    "id": "openai-it-it-sage-female",
+    "name": "sage FEMALE",
+    "language": "it-IT",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/it-IT-sage-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=it-IT&caller=sage-FEMALE"
+  },
+  {
+    "id": "openai-nl-nl-ash-male",
+    "name": "ash MALE",
+    "language": "nl-NL",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/nl-NL-ash-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=nl-NL&caller=ash-MALE"
+  },
+  {
+    "id": "openai-nl-nl-ballad-male",
+    "name": "ballad MALE",
+    "language": "nl-NL",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/nl-NL-ballad-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=nl-NL&caller=ballad-MALE"
+  },
+  {
+    "id": "openai-nl-nl-coral-female",
+    "name": "coral FEMALE",
+    "language": "nl-NL",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/nl-NL-coral-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=nl-NL&caller=coral-FEMALE"
+  },
+  {
+    "id": "openai-nl-nl-onyx-male",
+    "name": "onyx MALE",
+    "language": "nl-NL",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/nl-NL-onyx-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=nl-NL&caller=onyx-MALE"
+  },
+  {
+    "id": "openai-nl-nl-sage-female",
+    "name": "sage FEMALE",
+    "language": "nl-NL",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/nl-NL-sage-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=nl-NL&caller=sage-FEMALE"
+  },
+  {
+    "id": "openai-ru-ru-ash-male",
+    "name": "ash MALE",
+    "language": "ru-RU",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/ru-RU-ash-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=ru-RU&caller=ash-MALE"
+  },
+  {
+    "id": "openai-ru-ru-ballad-male",
+    "name": "ballad MALE",
+    "language": "ru-RU",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/ru-RU-ballad-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=ru-RU&caller=ballad-MALE"
+  },
+  {
+    "id": "openai-ru-ru-coral-female",
+    "name": "coral FEMALE",
+    "language": "ru-RU",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/ru-RU-coral-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=ru-RU&caller=coral-FEMALE"
+  },
+  {
+    "id": "openai-ru-ru-onyx-male",
+    "name": "onyx MALE",
+    "language": "ru-RU",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/ru-RU-onyx-MALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=ru-RU&caller=onyx-MALE"
+  },
+  {
+    "id": "openai-ru-ru-sage-female",
+    "name": "sage FEMALE",
+    "language": "ru-RU",
+    "provider": "openai",
+    "url": "https://darts-downloads.peschi.org/soundfiles/openai/ru-RU-sage-FEMALE.zip",
+    "preview_url": "https://darts-caller-preview.peschi.org/?language=ru-RU&caller=sage-FEMALE"
+  }
+]

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from ochecore import __version__
+from ochecore.caller import CallerConfig, CallerTest
 from ochecore.config import ConnectionConfig
 from ochecore.events import Event
 from ochecore.wled import Preview, WLEDConfig
@@ -105,6 +106,54 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
                 "boards": await runtime.cloud.list_boards(),
                 "selected_board_id": runtime.config.board_id or None,
             }
+
+    @router.get("/api/caller")
+    async def caller_config(request: Request) -> CallerConfig:
+        return request.app.state.runtime.caller.config
+
+    @router.put("/api/caller")
+    async def configure_caller(config: CallerConfig, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            await runtime.caller.configure(config)
+        return {"saved": True}
+
+    @router.patch("/api/caller")
+    async def update_caller(config: CallerConfig, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            if config.model_fields_set:
+                updated = runtime.caller.config.model_copy(
+                    update={key: getattr(config, key) for key in config.model_fields_set}
+                )
+                await runtime.caller.configure(updated)
+        return {"saved": True}
+
+    @router.get("/api/caller/status")
+    async def caller_status(request: Request):
+        return request.app.state.runtime.caller.status()
+
+    @router.get("/api/caller/voices")
+    async def caller_voices(request: Request):
+        return request.app.state.runtime.caller.library.catalogue()
+
+    @router.post("/api/caller/voices/{voice_id}/install", status_code=202)
+    async def caller_install(voice_id: str, request: Request):
+        return request.app.state.runtime.caller.library.install(voice_id)
+
+    @router.post("/api/caller/test")
+    async def caller_test(sample: CallerTest, request: Request):
+        return request.app.state.runtime.caller.test(sample)
+
+    @router.post("/api/caller/stop")
+    async def caller_stop(request: Request):
+        request.app.state.runtime.caller.stop()
+        return {"stopped": True}
+
+    @router.get("/api/caller/audio/{voice_id}/{clip}")
+    async def caller_audio(voice_id: str, clip: str, request: Request):
+        library = request.app.state.runtime.caller.library
+        return FileResponse(library.clip_path(voice_id, clip))
 
     @router.put("/api/config")
     async def configure(config: ConnectionConfig, request: Request):

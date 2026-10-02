@@ -9,6 +9,8 @@ COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.13-slim
+RUN apt-get update && apt-get install -y --no-install-recommends libasound2 libpulse0 \
+    && rm -rf /var/lib/apt/lists/*
 RUN groupadd --gid 10001 ochecore && useradd --uid 10001 --gid ochecore --create-home ochecore
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv

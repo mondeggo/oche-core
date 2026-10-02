@@ -64,13 +64,19 @@ Unknown context is null or absent, rather than inferred from the logged-in accou
 `player` contains `id`, roster `index`, `name`, `board_id`, `is_local` and `is_bot`. Locality
 uses the player's Board ID. A guest on the selected board is local; a bot is not a local
 human player. Turn ownership uses `playerId` when supplied, even if the active player changed.
-`remaining` comes from AutoDarts' `gameScores`; it is not recomputed by OcheCore.
+`game_score` comes from AutoDarts' `gameScores`. `remaining` exposes that value only for X01,
+Random Checkout and 121; it is null for modes that do not count down. Neither is recomputed.
+`turn_total` preserves `turn.score` (whose meaning depends on the mode); visit `score` and
+`turn_score` preserve `turn.points`. Context also includes `settings`, an optional per-player
+`target`, `checkout_available` from the upstream guide, and `editing`.
 
 | Event | Trigger and additional fields |
 |---|---|
 | `match_started` | Explicit board match-start notification |
 | `match_ended` | Matching board finish/delete/end notification; `reason` |
 | `player_changed` | The active player's identity changes between full states |
+| `turn_started` | A previously unseen visit begins, including solo play; `leg_start` identifies a new set/leg |
+| `match_editing` | The selected match's `activated` field enters/leaves editing; `editing` |
 | `throw` | A new scored dart in the newest visit; `dart`, `turn_score` |
 | `throw_corrected` | A known dart's segment changes or a dart replaces an occupied position; `dart`, `previous_dart`. Restoring an undone ID uses `restored: true` |
 | `throw_removed` | A previously present dart disappears from the same visit; `dart` |
@@ -138,4 +144,6 @@ The X01 fixture and replay transitions are synthetic and based on these sources.
 local/remote/guest attribution, corrections, undo, busts, wins, leg changes and reconnection.
 The real board detail response confirmed nested `state.connected`. A previously observed
 match's state endpoint returned 404, so no live scoring capture was available for this change.
-Full live-match acceptance and broader training-variant coverage remain pending.
+Caller replay tests now cover the common scoring/win contracts in all 14 reference modes,
+CountUp aliases and Cricket/Tactics, plus targeted checkout and target cases. These transitions
+are synthetic; full live-match acceptance across the modes remains pending.

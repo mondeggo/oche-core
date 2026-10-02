@@ -10,3 +10,8 @@ stable during corrections, repeated `finishedAt` updates and winner fields follo
 Takeout strings follow AutoGlow-2's `_handle_raw_message` and darts-caller's board handler.
 
 Keep account identities, coordinates, profiles, tokens and private live captures out of fixtures.
+
+`test_caller.py` varies the common match envelope across all 14 modes listed in Tools'
+`utils/game-modes.ts`, plus CountUp aliases and Cricket/Tactics settings. These are synthetic
+contract tests, not captured matches. Target and Gotcha checkout tests use the field shapes
+read by the reference callers; mode-specific live acceptance remains separate.

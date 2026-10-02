@@ -689,7 +689,8 @@ pre {
 .wled-discovered-device .hint {
   margin: 4px 0 0;
 }
-.wled-grid {
+.wled-grid,
+.form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 18px;
@@ -699,6 +700,16 @@ pre {
   align-items: center;
   gap: 9px;
   margin: 0;
+}
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+@media (max-width: 600px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 input[type="checkbox"] {
   width: 17px;
