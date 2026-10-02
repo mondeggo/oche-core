@@ -1,0 +1,35 @@
+{
+  "enabled": false,
+  "devices": [
+    {
+      "id": "board",
+      "name": "Board lights",
+      "url": "http://wled.local",
+      "targets": [
+        {
+          "id": "ring",
+          "name": "Board surround",
+          "segment": 0,
+          "phases": {
+            "ready": {"color": "#00ff00", "brightness": 128},
+            "takeout": {"color": "#ffff00", "brightness": 128},
+            "waiting": {"color": "#ff0000", "brightness": 128}
+          }
+        },
+        {
+          "id": "score",
+          "name": "Remaining score",
+          "segment": 1,
+          "mode": "matrix",
+          "matrix": {
+            "width": 16,
+            "height": 8,
+            "serpentine": true,
+            "rotation": 0,
+            "source": "remaining"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -11,7 +11,25 @@
 
 Each history holds the latest 100 entries in memory. Each live subscriber has an independent
 bounded queue. There is no persistent journal or replay on WebSocket connection. The optional
-UI shows normalized game events. Both APIs remain available with the UI disabled.
+UI switches between both streams. Both APIs remain available with the UI disabled.
+
+## Current game state
+
+`GET /api/game` and `ochecore game` expose the current display state independently of event
+history: `board_id`, `match_id`, `available`, `phase`, `reason`, `player`, `remaining`,
+`turn_score` and `last_dart`, plus match context when known. Scores come from validated cloud
+state. REST baselines, corrections and undo update this view without requiring a new throw.
+
+`available` means the cloud is connected and the board's online status was checked within
+the greater of 60 seconds or three reconciliation intervals. Missing or invalid match state
+clears displayed scores while keeping the event comparison baseline. The phase is `waiting`
+until a valid match state arrives; with no active match it is `idle`.
+
+For local players, `ready` requires explicit board status `Ready` or `Ready for throw`.
+Unknown/calibrating statuses and new detection signals use `waiting`. Completed local visits
+and local takeout signals use `takeout`; takeout completion waits for fresh readiness.
+Remote players and bots cannot enable local green lighting. These readiness strings are based
+on supplied references and still require validation during real matches.
 
 ### Raw frames
 

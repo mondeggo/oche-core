@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from ochecore import __version__
 from ochecore.config import ConnectionConfig
 from ochecore.events import Event
+from ochecore.wled import Preview, WLEDConfig
 
 
 def same_origin(origin: str | None, host: str, scheme: str) -> bool:
@@ -49,6 +50,37 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
                 key for key in ConnectionConfig.model_fields if getattr(runtime.settings, key)
             ],
         }
+
+    @router.get("/api/game")
+    async def game(request: Request):
+        return request.app.state.runtime.game_state()
+
+    @router.get("/api/wled")
+    async def wled_config(request: Request) -> WLEDConfig:
+        return request.app.state.runtime.wled.config
+
+    @router.put("/api/wled")
+    async def configure_wled(config: WLEDConfig, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            await runtime.wled.configure(config)
+        return {"saved": True}
+
+    @router.get("/api/wled/status")
+    async def wled_status(request: Request):
+        return request.app.state.runtime.wled.status()
+
+    @router.post("/api/wled/{device_id}/probe")
+    async def wled_probe(device_id: str, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            return await runtime.wled.probe(device_id)
+
+    @router.post("/api/wled/{device_id}/test")
+    async def wled_test(device_id: str, preview: Preview, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            return await runtime.wled.test(device_id, preview)
 
     @router.get("/api/boards")
     async def boards(request: Request):

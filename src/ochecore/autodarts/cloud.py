@@ -71,6 +71,7 @@ class CloudConnection:
         self.invalid_messages = 0
         self.subscriptions: set[tuple[str, str]] = set()
         self.subscription_errors: dict[tuple[str, str], str] = {}
+        self.board_checked_at = 0.0
 
     @property
     def match_id(self) -> str | None:
@@ -91,6 +92,14 @@ class CloudConnection:
                 for (channel, topic), error in self.subscription_errors.items()
             ],
         }
+
+    def game_state(self) -> dict:
+        available = (
+            self.state == "connected"
+            and board_online(self.board) is True
+            and time.monotonic() - self.board_checked_at < max(60, self.reconcile_interval * 3)
+        )
+        return self.normalizer.current_state(available)
 
     async def get(self, path: str, missing_ok: bool = False) -> dict | None:
         result = await self._request("GET", f"{self.auth.base_url}{path}", missing_ok)
@@ -209,6 +218,9 @@ class CloudConnection:
         if match_id is not None and (not isinstance(match_id, str) or not match_id):
             raise ConnectionProblem("Invalid AutoDarts match ID.")
         await self.set_match(ws, match_id)
+        self.board_checked_at = time.monotonic()
+        state = self.board.get("state")
+        self.normalizer.board_status(state if isinstance(state, dict) else self.board)
 
     async def on_message(self, ws, raw: str | bytes) -> None:
         payload = self.bus.record_raw(raw)
@@ -243,6 +255,7 @@ class CloudConnection:
             self.match.update(data)
         elif event == "board.state":
             self.board = {**(self.board or {}), "state": data}
+            self.board_checked_at = time.monotonic()
         self.publish(event, data, channel=message.channel, topic=message.topic)
         if event == "board.matches":
             match_id = data.get("id")

@@ -234,6 +234,9 @@ class EventNormalizer:
         self.synchronized = False
         self.invalid_states = 0
         self.emitted = 0
+        self.readiness: str | None = None
+        self.state_valid = False
+        self.takeout_is_local = False
 
     def select(self, match_id: str | None) -> None:
         if match_id == self.match_id:
@@ -244,11 +247,90 @@ class EventNormalizer:
         self.takeout_phase = None
         self.takeout_context = None
         self.synchronized = False
+        self.readiness = None
+        self.state_valid = False
+        self.takeout_is_local = False
 
     def resync(self) -> None:
         self.synchronized = False
+        self.state_valid = False
+        self.takeout_is_local = False
+        self.readiness = None
         self.takeout_phase = None
         self.takeout_context = None
+
+    def board_status(self, data: dict) -> None:
+        """Recognize explicit reference statuses; absence of readiness never means ready."""
+        status = data.get("status")
+        if not isinstance(status, str):
+            self.readiness = None
+            return
+        status = status.lower().replace("_", " ").replace("-", " ").strip()
+        if status in {"ready", "ready for throw"}:
+            self.readiness = "ready"
+        elif status in {"takeout", "takeout in progress", "removing darts"}:
+            self.readiness = "takeout"
+        else:
+            self.readiness = "waiting"
+
+    def current_state(self, available: bool) -> dict:
+        """A current display snapshot, including silent baselines and corrected scores."""
+        frame = self.frame if available and self.synchronized and self.state_valid else None
+        result = {
+            "board_id": self.board_id or None,
+            "match_id": self.match_id,
+            "available": available,
+            "phase": "waiting",
+            "reason": "Connection unavailable",
+            "player": None,
+            "remaining": None,
+            "turn_score": None,
+            "last_dart": None,
+        }
+        if not available:
+            return result
+        if not self.match_id:
+            return {**result, "phase": "idle", "reason": "No active match"}
+        if frame is None:
+            return {**result, "reason": "Waiting for match state"}
+        player = frame.players[frame.player]
+        turn = frame.turns[0] if frame.turns else None
+        owner = self._context(frame, turn).get("player") if turn else None
+        active_turn = turn if owner and owner["id"] == player.id else None
+        result.update(self._context(frame))
+        result["turn_score"] = active_turn.points if active_turn else 0
+        result["last_dart"] = (
+            active_turn.throws[-1].segment.number * active_turn.throws[-1].segment.multiplier
+            if active_turn and active_turn.throws
+            else None
+        )
+        completed = turn and (
+            len(turn.throws) == 3
+            or turn.busted
+            or turn.finished_at
+            or frame.game_winner >= 0
+            or frame.winner >= 0
+        )
+        if (
+            (self.takeout_phase == "takeout_started" and self.takeout_is_local)
+            or self.readiness == "takeout"
+            or (
+                completed
+                and owner
+                and owner["is_local"]
+                and not (self.takeout_phase == "takeout_finished" and self.takeout_is_local)
+            )
+        ):
+            result.update(phase="takeout", reason="Remove darts")
+        elif frame.game_winner >= 0 or frame.winner >= 0:
+            result["reason"] = "Leg or match finished"
+        elif not result["player"]["is_local"]:
+            result["reason"] = "Waiting for another board or a bot"
+        elif self.readiness == "ready":
+            result.update(phase="ready", reason="Board reports ready for throw")
+        else:
+            result["reason"] = "Waiting for explicit board readiness"
+        return result
 
     def _remember(self, key: tuple) -> bool:
         if key in self.seen:
@@ -327,6 +409,8 @@ class EventNormalizer:
             self._board_event(raw)
 
     def _board_event(self, raw: Event) -> None:
+        if raw.event == "board.state":
+            self.board_status(raw.data)
         action = raw.data.get("event", raw.data.get("status", ""))
         if not isinstance(action, str) or raw.snapshot:
             return
@@ -343,18 +427,29 @@ class EventNormalizer:
             self.takeout_phase = phase
             turn = self.frame.turns[0] if self.frame and self.frame.turns else None
             context = self._context(self.frame, turn)
+            phase_context = (
+                self.takeout_context or context if phase == "takeout_finished" else context
+            )
+            self.takeout_is_local = raw.event.startswith("board.") or bool(
+                (phase_context.get("player") or {}).get("is_local")
+            )
+            if self.takeout_is_local:
+                self.readiness = "takeout" if phase == "takeout_started" else "waiting"
             if phase == "takeout_started":
                 self.takeout_context = context
             self._emit(phase, raw, self.takeout_context or context)
             if phase == "takeout_finished":
                 self.takeout_context = None
-        elif action in {"throw detected", "manual reset"}:
+        elif raw.event.startswith("board.") and action in {"throw detected", "manual reset"}:
+            self.readiness = "waiting"
             self.takeout_phase = None
             self.takeout_context = None
 
     def _match_state(self, raw: Event) -> None:
         # Activation-only updates are not full scoring states.
         if "turns" not in raw.data:
+            return
+        if raw.data.get("id", self.match_id) != self.match_id:
             return
         try:
             frame = MatchFrame.model_validate(raw.data)
@@ -365,6 +460,8 @@ class EventNormalizer:
                     raise ValueError("Duplicate dart ID")
         except (ValidationError, ValueError):
             self.invalid_states += 1
+            self.state_valid = False
+            self.readiness = None
             return
         if frame.id != self.match_id:
             return
@@ -401,6 +498,7 @@ class EventNormalizer:
                 self._outcomes(raw, frame, current)
         self.frame = frame
         self.synchronized = True
+        self.state_valid = True
 
     def _darts(self, raw: Event, frame: MatchFrame, turn: Turn) -> None:
         key = self._key(frame, turn)
@@ -426,6 +524,9 @@ class EventNormalizer:
             elif self._remember(("throw", *key, dart.id)):
                 self.takeout_phase = None
                 self.takeout_context = None
+                self.takeout_is_local = False
+                if (context.get("player") or {}).get("is_local"):
+                    self.readiness = "waiting"
                 self._emit("throw", raw, data)
             else:
                 self._emit("throw_corrected", raw, {**data, "restored": True})

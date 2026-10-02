@@ -7,6 +7,7 @@ from ochecore.autodarts.cloud import CloudConnection
 from ochecore.config import ConnectionConfig, Settings
 from ochecore.events import EventBus
 from ochecore.storage import write_private_json
+from ochecore.wled import WLED
 
 
 class Runtime:
@@ -18,6 +19,10 @@ class Runtime:
         self.tasks: list[asyncio.Task] = []
         self.lock = asyncio.Lock()
         self._create_connections()
+        self.wled = WLED(settings.data_dir / "wled.json", http, self.bus, self.game_state)
+
+    def game_state(self) -> dict:
+        return self.cloud.game_state()
 
     def _create_connections(self) -> None:
         self.auth = DeviceAuth(
@@ -34,12 +39,14 @@ class Runtime:
         self.tasks = [
             asyncio.create_task(self.cloud.run(), name="autodarts-cloud"),
         ]
+        self.wled.start()
 
     async def close(self) -> None:
         for task in self.tasks:
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
         self.tasks.clear()
+        await self.wled.close()
         await self.auth.close()
 
     async def configure(self, config: ConnectionConfig) -> None:

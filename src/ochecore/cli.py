@@ -6,15 +6,18 @@ import logging
 import os
 import sys
 import time
+from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 import uvicorn
+from pydantic import ValidationError
 from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect
 
 from ochecore import __version__
 from ochecore.config import Settings
+from ochecore.wled import WLEDConfig
 
 
 class ControlError(Exception):
@@ -68,6 +71,25 @@ def parser() -> argparse.ArgumentParser:
     events.add_argument(
         "--raw", action="store_true", help="Show incoming AutoDarts frames instead of game events."
     )
+    commands.add_parser("game", help="Show current game phase and display scores.")
+    wled = commands.add_parser("wled", help="Configure and control WLED lights and matrices.")
+    actions = wled.add_subparsers(dest="wled_command", required=True)
+    actions.add_parser("status", help="Show devices, errors and current game phase.")
+    settings = actions.add_parser("config", help="Show configuration or load a JSON file.")
+    settings.add_argument("--file", type=Path)
+    probe = actions.add_parser("probe", help="Check a saved controller and its segments.")
+    probe.add_argument("device")
+    preview = actions.add_parser("test", help="Temporarily preview a saved lighting target.")
+    preview.add_argument("device")
+    preview.add_argument("--target", required=True)
+    preview.add_argument(
+        "--phase", choices=["idle", "ready", "takeout", "waiting"], default="ready"
+    )
+    preview.add_argument("--value", type=int, help="Sample matrix score.")
+    preview.add_argument("--duration", type=float, default=3)
+    for name in ("enable", "disable"):
+        command = actions.add_parser(name, help=f"{name.capitalize()} WLED or a saved device.")
+        command.add_argument("device", nargs="?")
     return root
 
 
@@ -161,7 +183,54 @@ def execute(args, client) -> int:
             follow_events(args.url, args.raw)
         else:
             print_json(request(client, "GET", "/api/events/raw" if args.raw else "/api/events"))
+    elif args.command == "game":
+        print_json(request(client, "GET", "/api/game"))
+    elif args.command == "wled":
+        execute_wled(args, client)
     return 0
+
+
+def execute_wled(args, client) -> None:
+    command = args.wled_command
+    if command == "status":
+        print_json(request(client, "GET", "/api/wled/status"))
+    elif command == "config":
+        if args.file:
+            try:
+                config = WLEDConfig.model_validate_json(args.file.read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError, ValidationError) as exc:
+                raise ControlError(
+                    "Cannot load WLED configuration. Check the JSON file and fields."
+                ) from exc
+            request(client, "PUT", "/api/wled", config.model_dump(mode="json"))
+        print_json(request(client, "GET", "/api/wled"))
+    elif command in {"enable", "disable"}:
+        config = request(client, "GET", "/api/wled")
+        target = config
+        if args.device:
+            target = next((d for d in config["devices"] if d["id"] == args.device), None)
+            if target is None:
+                raise ControlError("Unknown WLED device. Save it first.")
+        target["enabled"] = command == "enable"
+        print_json(request(client, "PUT", "/api/wled", config))
+    else:
+        device = args.device
+        if not device or any(
+            c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+            for c in device
+        ):
+            raise ControlError("Invalid WLED device ID.")
+        body = (
+            {}
+            if command == "probe"
+            else {
+                "target_id": args.target,
+                "phase": args.phase,
+                "value": args.value,
+                "duration": args.duration,
+            }
+        )
+        print_json(request(client, "POST", f"/api/wled/{device}/{command}", body))
 
 
 def run(argv=None) -> int:
