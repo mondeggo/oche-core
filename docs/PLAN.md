@@ -77,8 +77,10 @@ and correct local/remote player attribution.
 ## Phase 3 — Rules, WLED and caller
 
 1. Independent bounded integration queues, timeouts and failure isolation.
-2. Validated YAML rules: events, filters and lists of actions.
-3. Implement `wled.py`: JSON presets, multiple devices and rate limits.
+2. Validated rules: target, phase/event, filters and actions. Persist integration settings under
+   `data/`; CLI and the optional UI read and edit them through the service API.
+3. Implement `wled.py`: device/segment/pixel controls, phase lighting and a matrix scoreboard
+   as specified below, with multiple devices and rate limits.
 4. Implement `caller.py`: user-provided sounds, then player names and checkout announcements.
    Choose browser or host audio based on deployment needs.
 5. Initial rules: triple, bull, 180, bust and victory; define priority and cancellation.
@@ -86,11 +88,82 @@ and correct local/remote player attribution.
 Acceptance: a WLED outage cannot block audio or incoming events. Rules can be tested without
 a match. Replayed events do not trigger actions by default.
 
+### WLED scope
+
+Requirements updated October 2, 2026: independent LED presets, colours for each game phase,
+and scores on an LED matrix belong in the WLED integration.
+
+**Targets and saved appearances**
+
+- Name controllers and their lighting targets: a strip, WLED segment, LED range, individual
+  addressable LED, or matrix region. Validate the device capabilities, bounds and overlapping
+  targets before applying settings.
+- Save colours, brightness and effects independently for each target. For example, the
+  surround can show the game phase while the matrix shows the score and board illumination
+  stays steady. Treat whole-device WLED presets as explicit actions; use segment/pixel
+  controls for target-level settings. Native presets may contain changes to several segments.
+- Account for segment ownership when using individual pixel control: it can suspend the
+  native effect on that segment. Compose updates for each owned target and restore its
+  current phase when a temporary effect ends.
+
+**Persistent game phases**
+
+| Phase | Default appearance |
+|---|---|
+| Ready to throw on the selected board | Green |
+| Remove darts / takeout in progress | Yellow |
+| Wait / do not throw | Red |
+| No active match | Configurable idle appearance |
+
+Colours are configurable per target. These are persistent states, with temporary throw,
+bull, 180, bust and victory effects layered according to priority and duration. When an effect
+ends, restore the current phase, which may have changed while the effect was playing.
+
+The headless core must expose the interpreted game phase and current match state to all
+clients and integrations. Derive phases from verified cloud state and takeout/turn signals.
+A scored throw or an online board alone does not prove the detector is ready. Validate the
+cloud signals for readiness, calibration and pauses; keep unsupported or stale readiness
+explicitly unknown and use the waiting appearance. No legacy local-board adapter is required
+or implied. If the cloud connection is lost while WLED remains reachable, clear the ready
+indication. A disconnected WLED controller cannot receive a fallback command.
+
+**Matrix scoreboard**
+
+- Show remaining score, visit total, last dart and active player, with brief messages such
+  as `180`, `BUST`, `WIN`, `REMOVE DARTS` and `WAIT`.
+- Read scores from the core's interpreted AutoDarts state. Corrections, undo, player changes
+  and reconnection snapshots must update the display without replaying celebrations.
+- Configure matrix dimensions, orientation and pixel layout, including serpentine wiring.
+  Discover supported WLED effects: use native text where suitable and pixel rendering for
+  a fixed scoreboard layout. Hardware and firmware support must be checked on the controller.
+- Keep matrix updates scoped to their target so score changes do not overwrite phase lights.
+
+**Controls and delivery order**
+
+Keep the WLED page to Devices, Phase colours, Event effects and Matrix display. Provide
+equivalent CLI/API controls, saved settings, per-target enable/disable, and tests that can
+preview a phase or sample score without a real match.
+
+1. Implement controller connection, capability discovery, targets and manual colour tests.
+2. Add the core phase/current-match view, configurable phase colours and transition tests.
+3. Add temporary event effects, priorities, cancellation and return to the current phase.
+4. Add matrix layout, live scores and correction/reconnection tests.
+
+Acceptance includes two independent targets on one controller, per-LED selection, green /
+yellow / red transitions, phase changes during a celebration, stale-state handling, matrix
+score correction and continued headless operation. Confirm the complete flow on real hardware.
+
+References: [WLED segments](https://kno.wled.ge/features/segments/),
+[JSON API and individual pixel control](https://kno.wled.ge/interfaces/json-api/),
+[native effects and matrix text](https://kno.wled.ge/features/effects/), and the supplied
+AutoGlow-2 phase and segment-isolation implementations. AutoGlow-2's "matrix" of event
+assignments is distinct from the physical LED matrix scoreboard required here.
+
 ## Phase 4 — MQTT, Home Assistant and scoreboard
 
 1. Implement `mqtt.py`: versioned events and availability.
 2. Implement `home_assistant.py`: webhooks, then MQTT discovery if useful.
-3. Expose interpreted match state and add a browser scoreboard/OBS overlay.
+3. Use the interpreted match state from phase 3 for a browser scoreboard/OBS overlay.
 4. Add a deliberate Socket.IO adapter if legacy caller extensions are needed.
 
 Acceptance: recover from broker outages without replaying effects from retained state;
