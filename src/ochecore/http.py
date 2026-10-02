@@ -76,6 +76,10 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
         async with runtime.lock:
             return await runtime.wled.probe(device_id)
 
+    @router.post("/api/wled/discover")
+    async def wled_discover(request: Request):
+        return await request.app.state.runtime.wled.discover()
+
     @router.post("/api/wled/{device_id}/test")
     async def wled_test(device_id: str, preview: Preview, request: Request):
         runtime = request.app.state.runtime

@@ -1,7 +1,28 @@
 # Connection, event and WLED validation
 
-Updated October 2, 2026 after the first WLED implementation. Terminal controls and the optional
+Updated October 2, 2026 after adding WLED discovery. Terminal controls and the optional
 UI share the same headless service.
+
+## WLED discovery
+
+All **117 Python tests** passed after adding discovery, along with Ruff, Python formatting,
+JavaScript syntax checks, package builds and Compose configuration validation. Discovery uses
+`zeroconf` with its `ifaddr` dependency; both are recorded in `uv.lock`.
+
+New tests cover verified/deduplicated results, disappearing and invalid advertisements,
+unreachable/non-WLED responses, bounded pending work, cancellation cleanup, network startup
+errors, concurrent scans and API/CLI operation with the UI and lighting disabled. Discovery
+does not save configuration or send lighting commands.
+
+The temporary jsdom checks also passed discovery loading/empty/error states, safe rendering
+of advertised names, duplicate prevention by IP/hostname, explicit Add then Save, and preservation
+of pending edits. Visual browser review remains pending.
+
+The native development service was started with the updated code on `0.0.0.0:9180`.
+`ochecore wled discover` completed a real mDNS scan and returned an empty device list.
+Health, UI and WLED JavaScript requests returned HTTP 200. This verifies the scan runs in this
+environment; live identification of an installed controller still needs an advertising device
+reachable from the service. Docker deployment remains pending as described below.
 
 ## First WLED implementation
 
@@ -94,7 +115,8 @@ Subscription-error tests verify raw preservation, optional user-topic warnings, 
 readiness for rejected game topics, continued delivery on healthy topics and error recovery.
 
 Ruff checks and formatting passed for `src/ochecore/` and `tests/`. The simplified UI passed
-JavaScript syntax validation. No new dependencies were added.
+JavaScript syntax validation. The earlier UI cleanup added no dependencies; discovery now uses
+`zeroconf` as described above.
 
 ## Previous deployment checks
 

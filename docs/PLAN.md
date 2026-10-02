@@ -85,6 +85,7 @@ First WLED implementation:
 - [x] Local triple, bull, 180, bust and win effects with priority and cancellation.
 - [x] Numeric matrix scores, orientation/serpentine layout, correction and snapshot updates.
 - [x] Mocked device, headless API and UI form validation.
+- [x] Local mDNS discovery with API verification, CLI access and an explicit Add action in the UI.
 - [ ] Live phase/readiness and physical matrix acceptance with the installed hardware.
 - [ ] Native whole-device preset actions, matrix player names and scrolling messages.
 - [ ] Caller integration and shared profiles/rules if needed across integrations.

@@ -204,6 +204,13 @@
           <p class="hint">
             Save settings to apply them. Lights keep working when this page is closed.
           </p>
+          <div class="actions">
+            <button id="wled-discover" type="button" disabled>Discover devices</button>
+            <span id="wled-discovery-status" class="hint" role="status">
+              Find controllers on OcheCore's local network.
+            </span>
+          </div>
+          <div id="wled-discovered" aria-label="Discovered WLED controllers" hidden></div>
           <label for="wled-device">Device</label>
           <div class="field-row">
             <select id="wled-device">

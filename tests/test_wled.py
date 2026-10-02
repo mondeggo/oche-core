@@ -10,7 +10,9 @@ import pytest
 from conftest import BOARD_ID, MATCH_ID
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from zeroconf import IPVersion, ServiceStateChange
 
+from ochecore import wled
 from ochecore.autodarts.auth import DeviceAuth
 from ochecore.autodarts.cloud import CloudConnection
 from ochecore.autodarts.errors import ConnectionProblem
@@ -25,6 +27,7 @@ from ochecore.wled import (
     Matrix,
     Preview,
     WLEDConfig,
+    discover_devices,
     inspect_device,
     matrix_pixels,
     payload,
@@ -414,3 +417,162 @@ async def test_disable_during_preview_clears_lights_and_workers(tmp_path):
             assert not service.tasks and not bus.normalized_queues
         finally:
             await service.close()
+
+
+def mock_discovery(monkeypatch, records):
+    """Advertise services without opening multicast sockets in the test suite."""
+    lifecycle = {"closed": False, "cancelled": False}
+
+    class Zeroconf:
+        def __init__(self, *, ip_version):
+            assert ip_version is IPVersion.V4Only
+            self.zeroconf = self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            lifecycle["closed"] = True
+
+    class Browser:
+        def __init__(self, zeroconf, service_type, *, handlers):
+            assert service_type == wled.WLED_SERVICE
+            for name, record in records.items():
+                args = dict(zeroconf=zeroconf, service_type=service_type, name=name)
+                handlers[0](**args, state_change=ServiceStateChange.Added)
+                handlers[0](**args, state_change=ServiceStateChange.Updated)
+                if record.get("removed"):
+                    handlers[0](**args, state_change=ServiceStateChange.Removed)
+
+        async def async_cancel(self):
+            lifecycle["cancelled"] = True
+
+    class Info:
+        def __init__(self, service_type, name):
+            self.record = records[name]
+            self.port = self.record.get("port", 80)
+            self.server = self.record.get("hostname", f"{name}.local.")
+
+        async def async_request(self, zeroconf, timeout_ms):
+            if "pending" in self.record:
+                self.record["pending"].set()
+                await asyncio.Future()
+            return self.record.get("resolved", True)
+
+        def parsed_addresses(self, version):
+            assert version is IPVersion.V4Only
+            return self.record.get("addresses", [])
+
+    monkeypatch.setattr(wled, "AsyncZeroconf", Zeroconf)
+    monkeypatch.setattr(wled, "AsyncServiceBrowser", Browser)
+    monkeypatch.setattr(wled, "AsyncServiceInfo", Info)
+    monkeypatch.setattr(wled, "DISCOVERY_SECONDS", 0.01)
+    return lifecycle
+
+
+async def test_discovery_verifies_deduplicates_and_filters_advertisements(monkeypatch):
+    records = {
+        "ring": {"addresses": ["192.168.1.20"]},
+        "alias": {"addresses": ["192.168.1.20"], "hostname": "ring.local."},
+        "matrix": {"addresses": ["192.168.1.21"], "port": 8080},
+        "offline": {"addresses": ["192.168.1.22"]},
+        "wrong-service": {"addresses": ["192.168.1.23"]},
+        "removed": {"addresses": ["192.168.1.24"], "removed": True},
+        "unresolved": {"resolved": False},
+        "invalid": {"addresses": ["not-an-address"]},
+        "loopback": {"addresses": ["127.0.0.1", "0.0.0.0"]},
+    }
+    lifecycle = mock_discovery(monkeypatch, records)
+    requests = []
+
+    def transport(request):
+        requests.append(request)
+        assert request.method == "GET" and request.url.path == "/json"
+        assert "authorization" not in request.headers
+        if request.url.host == "192.168.1.22":
+            raise httpx.ConnectError("offline")
+        if request.url.host == "192.168.1.23":
+            return httpx.Response(200, json={"product": "not WLED"})
+        data = capabilities()
+        data["info"]["name"] = "Matrix" if request.url.port == 8080 else "Ring"
+        return httpx.Response(200, json=data)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as http:
+        found = await discover_devices(http)
+    assert [item["name"] for item in found] == ["Matrix", "Ring"]
+    assert [item["url"] for item in found] == ["http://192.168.1.21:8080", "http://192.168.1.20"]
+    assert found[1]["hostname"] == "ring.local"
+    assert len(requests) == 6  # Updated announcements do not repeat a probe.
+    assert lifecycle == {"closed": True, "cancelled": True}
+
+
+async def test_discovery_limits_work_and_closes_pending_probes(monkeypatch):
+    pending = asyncio.Event()
+    records = {str(index): {"pending": pending} for index in range(80)}
+    lifecycle = mock_discovery(monkeypatch, records)
+    async with httpx.AsyncClient() as http:
+        assert await asyncio.wait_for(discover_devices(http), timeout=1) == []
+    assert pending.is_set()
+    assert lifecycle == {"closed": True, "cancelled": True}
+
+
+async def test_discovery_cancellation_and_concurrent_scan(tmp_path, monkeypatch):
+    pending = asyncio.Event()
+    lifecycle = mock_discovery(monkeypatch, {"ring": {"pending": pending}})
+    monkeypatch.setattr(wled, "DISCOVERY_SECONDS", 10)
+    async with httpx.AsyncClient() as http:
+        service = WLED(tmp_path / "wled.json", http, EventBus(), lambda: {})
+        scan = asyncio.create_task(service.discover())
+        try:
+            await asyncio.wait_for(pending.wait(), timeout=1)
+            with pytest.raises(ConnectionProblem, match="already running"):
+                await service.discover()
+            assert service.status()["enabled"] is False
+            assert not service.path.exists()
+        finally:
+            scan.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await scan
+        assert not service.discovery_lock.locked()
+    assert lifecycle == {"closed": True, "cancelled": True}
+
+
+async def test_discovery_network_failure_is_actionable(monkeypatch):
+    def fail(**kwargs):
+        raise OSError("network interface unavailable")
+
+    monkeypatch.setattr(wled, "AsyncZeroconf", fail)
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(ConnectionProblem, match="add an address manually"):
+            await discover_devices(http)
+
+
+def test_discovery_api_cli_without_ui_or_enabling_lights(settings, monkeypatch, capsys):
+    found = [
+        {
+            "name": "Ring",
+            "url": "http://192.168.1.20",
+            "address": "192.168.1.20",
+            "hostname": "ring.local",
+            "version": "0.15.3",
+        }
+    ]
+
+    async def discover(http):
+        return found
+
+    monkeypatch.setattr(wled, "discover_devices", discover)
+    settings.ui_enabled = False
+    with TestClient(create_app(settings)) as client:
+        execute(parser().parse_args(["wled", "discover"]), client)
+        assert json.loads(capsys.readouterr().out) == {"devices": found}
+        assert client.get("/api/wled").json() == {"enabled": False, "devices": []}
+        assert not (settings.data_dir / "wled.json").exists()
+        assert (
+            client.post(
+                "/api/wled/discover", json={}, headers={"Origin": "https://other.test"}
+            ).status_code
+            == 403
+        )
+        assert client.post("/api/wled/discover", content="{}").status_code == 415
+        assert client.get("/healthz").status_code == 200

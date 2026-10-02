@@ -11,6 +11,7 @@ dependencies = [
     "pydantic-settings[yaml]>=2.8,<3",
     "uvicorn>=0.34,<1",
     "websockets>=15,<17",
+    "zeroconf>=0.148,<1",
 ]
 
 [project.scripts]

@@ -4,12 +4,16 @@ import asyncio
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
+from ipaddress import IPv4Address
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from zeroconf import Error as ZeroconfError
+from zeroconf import IPVersion, ServiceStateChange
+from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 
 from ochecore.autodarts.errors import ConnectionProblem
 from ochecore.events import Event, EventBus
@@ -20,6 +24,8 @@ EffectName = Literal["triple", "bull", "score_180", "bust", "leg_win", "match_wi
 Identifier = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_-]{1,40}$")]
 Colour = Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")]
 PRIORITY = {"triple": 1, "bull": 2, "score_180": 3, "bust": 4, "leg_win": 5, "match_win": 6}
+DISCOVERY_SECONDS = 3
+WLED_SERVICE = "_wled._tcp.local."
 
 
 class Model(BaseModel):
@@ -321,6 +327,73 @@ async def inspect_device(http: httpx.AsyncClient, device: Device) -> dict:
         raise ConnectionProblem("The device did not return valid WLED capabilities.") from exc
 
 
+async def discover_devices(http: httpx.AsyncClient) -> list[dict]:
+    """Browse WLED's IPv4 advertisements and verify candidates without changing lights."""
+    tasks: dict[str, asyncio.Task] = {}
+    active: set[str] = set()
+    found: dict[str, dict] = {}
+    slots = asyncio.Semaphore(4)
+
+    async def resolve(zeroconf, service_type: str, name: str) -> None:
+        async with slots:
+            try:
+                info = AsyncServiceInfo(service_type, name)
+                if not await info.async_request(zeroconf, 1000) or not info.port:
+                    return
+                for address in info.parsed_addresses(IPVersion.V4Only)[:2]:
+                    ip = IPv4Address(address)
+                    if ip.is_loopback or ip.is_multicast or ip.is_unspecified:
+                        continue
+                    url = f"http://{ip}" + (f":{info.port}" if info.port != 80 else "")
+                    device = Device(id="discovered", name="WLED", url=url)
+                    try:
+                        details = await inspect_device(http, device)
+                    except ConnectionProblem:
+                        continue
+                    found[name] = {
+                        "name": details["name"].strip()[:80] or "WLED",
+                        "address": str(ip),
+                        "url": url,
+                        "hostname": (info.server or "").rstrip("."),
+                        "version": details["version"],
+                    }
+                    return
+            except (OSError, ValueError, ZeroconfError):
+                return  # An invalid or disappearing advertisement does not stop other devices.
+
+    def changed(zeroconf, service_type, name, state_change):
+        if state_change is ServiceStateChange.Removed:
+            active.discard(name)
+            return
+        if name not in tasks and len(tasks) < 32:
+            tasks[name] = asyncio.create_task(resolve(zeroconf, service_type, name))
+        if name in tasks:
+            active.add(name)
+
+    try:
+        async with AsyncZeroconf(ip_version=IPVersion.V4Only) as zeroconf:
+            browser = None
+            try:
+                browser = AsyncServiceBrowser(zeroconf.zeroconf, WLED_SERVICE, handlers=[changed])
+                await asyncio.sleep(DISCOVERY_SECONDS)
+                await browser.async_cancel()
+                browser = None
+                if tasks:
+                    await asyncio.wait(tasks.values(), timeout=DISCOVERY_SECONDS)
+            finally:
+                if browser is not None:
+                    await browser.async_cancel()
+                for task in tasks.values():
+                    task.cancel()
+                await asyncio.gather(*tasks.values(), return_exceptions=True)
+    except (OSError, ZeroconfError) as exc:
+        raise ConnectionProblem(
+            "Cannot start local device discovery. Check network access or add an address manually."
+        ) from exc
+    unique = {device["url"]: device for name, device in found.items() if name in active}
+    return sorted(unique.values(), key=lambda device: (device["name"].casefold(), device["url"]))
+
+
 def validate_capabilities(device: Device, info: dict) -> None:
     segments = {item["id"]: item for item in info["segments"]}
     selected = []
@@ -447,6 +520,7 @@ class WLED:
         self.error: str | None = None
         self.workers: dict[str, DeviceWorker] = {}
         self.tasks: list[asyncio.Task] = []
+        self.discovery_lock = asyncio.Lock()
         try:
             if path.exists():
                 self.config = WLEDConfig.model_validate_json(path.read_text(encoding="utf-8"))
@@ -477,6 +551,12 @@ class WLED:
         await self.close()
         self.config, self.error = config, None
         self.start()
+
+    async def discover(self) -> dict:
+        if self.discovery_lock.locked():
+            raise ConnectionProblem("WLED discovery is already running. Try again shortly.")
+        async with self.discovery_lock:
+            return {"devices": await discover_devices(self.http)}
 
     def worker(self, device_id: str) -> DeviceWorker:
         if device_id not in self.workers:

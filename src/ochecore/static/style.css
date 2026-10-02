@@ -558,6 +558,21 @@ pre {
 }
 
 /* WLED editor */
+.wled-discovered-device {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.wled-discovered-device > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.wled-discovered-device .hint {
+  margin: 4px 0 0;
+}
 .wled-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

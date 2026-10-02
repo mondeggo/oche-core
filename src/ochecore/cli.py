@@ -75,6 +75,7 @@ def parser() -> argparse.ArgumentParser:
     wled = commands.add_parser("wled", help="Configure and control WLED lights and matrices.")
     actions = wled.add_subparsers(dest="wled_command", required=True)
     actions.add_parser("status", help="Show devices, errors and current game phase.")
+    actions.add_parser("discover", help="Find reachable WLED controllers on the service's network.")
     settings = actions.add_parser("config", help="Show configuration or load a JSON file.")
     settings.add_argument("--file", type=Path)
     probe = actions.add_parser("probe", help="Check a saved controller and its segments.")
@@ -194,6 +195,8 @@ def execute_wled(args, client) -> None:
     command = args.wled_command
     if command == "status":
         print_json(request(client, "GET", "/api/wled/status"))
+    elif command == "discover":
+        print_json(request(client, "POST", "/api/wled/discover"))
     elif command == "config":
         if args.file:
             try:

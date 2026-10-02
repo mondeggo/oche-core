@@ -6,6 +6,7 @@
   let working = false;
   let refreshing = null;
   let latestStatus = null;
+  let discovered = [];
   const phases = {
     ready: "Ready to throw",
     takeout: "Remove darts",
@@ -78,11 +79,79 @@
         !field(root, "enabled").checked;
     });
     $("wled-add-device").disabled = working || !configuration;
+    $("wled-discover").disabled = !configuration;
+    $("wled-add-device").disabled ||= configuration?.devices.length >= 8;
+    form.querySelectorAll("[data-add-found]").forEach((button) => {
+      const added = alreadyConfigured(discovered[Number(button.dataset.addFound)]);
+      button.disabled = added || configuration.devices.length >= 8;
+      button.textContent = added ? "Added" : "Add";
+    });
     $("wled-name").disabled = $("wled-url").disabled = !device();
   }
 
   function markChanged() {
     changed = true;
+    buttons();
+  }
+
+  function origin(url) {
+    try {
+      return new URL(url).origin;
+    } catch {
+      return url;
+    }
+  }
+
+  function alreadyConfigured(found) {
+    const address = new URL(found.url);
+    const origins = [address.origin];
+    if (found.hostname) {
+      address.hostname = found.hostname;
+      origins.push(address.origin);
+    }
+    return configuration.devices.some((item) => origins.includes(origin(item.url)));
+  }
+
+  function addDevice(name, url) {
+    if (!configuration || configuration.devices.length >= 8) return;
+    collect();
+    const added = { id: identity("device"), name, url, enabled: true, targets: [] };
+    configuration.devices.push(added);
+    selected = added.id;
+    markChanged();
+    render();
+  }
+
+  function renderDiscovery() {
+    const list = $("wled-discovered");
+    list.replaceChildren();
+    list.hidden = !discovered.length;
+    discovered.forEach((found, index) => {
+      const row = document.createElement("div");
+      row.className = "wled-discovered-device";
+      const description = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = found.name;
+      const details = document.createElement("p");
+      details.className = "hint";
+      details.textContent = `${found.url} · WLED ${found.version}`;
+      description.append(title, details);
+      const add = document.createElement("button");
+      add.type = "button";
+      add.dataset.addFound = index;
+      add.textContent = "Add";
+      add.addEventListener("click", () => {
+        collect();
+        if (alreadyConfigured(found)) {
+          buttons();
+          return;
+        }
+        addDevice(found.name, found.url);
+        notice("Device added to the form. Choose its lighting targets, then save settings.");
+      });
+      row.append(description, add);
+      list.append(row);
+    });
     buttons();
   }
 
@@ -360,19 +429,27 @@
     render();
   });
   $("wled-add-device").addEventListener("click", () => {
-    collect();
-    const added = {
-      id: identity("device"),
-      name: "WLED controller",
-      url: "http://wled.local",
-      enabled: true,
-      targets: [],
-    };
-    configuration.devices.push(added);
-    selected = added.id;
-    markChanged();
-    render();
+    addDevice("WLED controller", "http://wled.local");
   });
+  $("wled-discover").addEventListener("click", () =>
+    work(async () => {
+      const message = $("wled-discovery-status");
+      message.textContent = "Searching for WLED controllers… This takes a few seconds.";
+      discovered = [];
+      renderDiscovery();
+      try {
+        const result = await api("/api/wled/discover", "POST");
+        discovered = result.devices;
+        renderDiscovery();
+        message.textContent = discovered.length
+          ? `Found ${discovered.length} controller${discovered.length === 1 ? "" : "s"}. Choose Add to configure one.`
+          : "No reachable controllers found. Check they are on OcheCore's network with mDNS enabled, or add an address manually.";
+      } catch (error) {
+        message.textContent = "Discovery failed. You can still add a device by address.";
+        throw error;
+      }
+    }),
+  );
   $("wled-remove-device").addEventListener("click", () => {
     collect();
     configuration.devices = configuration.devices.filter((item) => item.id !== selected);

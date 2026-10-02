@@ -183,7 +183,10 @@ Settings and login data are saved as JSON in `data/`; there is no database.
 
 ## WLED lighting and matrix scores
 
-Open **WLED**, add a controller with its HTTP address, save it and select **Check connection**.
+Open **WLED â†’ Discover devices**, then choose **Add** next to a controller. Discovery shows
+verified controllers by name and address; it also works while WLED automation is disabled.
+Adding fills the form without saving or activating any lights. You can also use **Add device**
+to enter an HTTP address manually. Save the device and select **Check connection**.
 This loads its existing segments and available effects. Add a lighting target, choose its
 segment and mode, then enable WLED and save. **Test for 3 seconds** previews the target without
 a match and returns to the current game phase afterward.
@@ -211,6 +214,7 @@ address and existing segment IDs. It assumes a surround on segment `0` and a 16Ã
 segment `1`; remove the matrix target if you do not have one. Keep the service running, then:
 
 ```powershell
+uv run ochecore wled discover
 uv run ochecore wled config --file config/wled.example.json
 uv run ochecore wled probe board
 uv run ochecore wled enable
@@ -248,6 +252,21 @@ blocking AutoDarts or other lights; old effects are discarded. Disabling or reco
 a best-effort request for the waiting appearance and clears matrix scores before stopping.
 It does not restore a previous WLED preset. A disconnected controller cannot receive that reset.
 
+### Device discovery
+
+Discovery runs in the service, on the machine hosting OcheCore. It browses WLED's IPv4 mDNS
+service (`_wled._tcp.local.`), then checks each candidate's JSON API without changing its state.
+Results contain `name`, `address`, `url`, `hostname` and `version`. The scan takes about three
+to six seconds, with bounded concurrent checks and duplicate addresses removed. Only one scan
+runs at a time; regular lighting and AutoDarts processing continue.
+
+Controllers need mDNS enabled and must be reachable from OcheCore's network. Multicast discovery
+may not cross VLANs, guest Wi-Fi or Docker bridge networks. If no devices appear, use **Add
+device** with the controller's IP address. The browser's network is not used for discovery.
+The protocol follows [WLED's mDNS advertisement](https://github.com/wled/WLED/blob/main/wled00/wled.cpp)
+and uses the Python `zeroconf` library. Discovery currently covers IPv4 advertisements;
+subnet address sweeps and automatic device registration are not included.
+
 ## Configuration
 
 `config/config.yaml` is loaded at startup. Priority, from highest to lowest:
@@ -282,6 +301,7 @@ save. Old YAML/environment options for that adapter are also ignored. See the
 | `GET /api/game` | Current phase, reason, player and display scores |
 | `GET /api/wled`, `PUT /api/wled` | Saved WLED controllers and target configuration |
 | `GET /api/wled/status` | Device connectivity, errors, capabilities and current phase |
+| `POST /api/wled/discover` | Find reachable WLED controllers via mDNS; body `{}`; does not save devices |
 | `POST /api/wled/{device_id}/probe` | Check controller capabilities; body `{}` |
 | `POST /api/wled/{device_id}/test` | Timed preview: `target_id`, `phase`, optional `value`, `duration` |
 | `GET /api/config`, `PUT /api/config` | Public connection settings |
