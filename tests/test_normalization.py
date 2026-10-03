@@ -115,6 +115,46 @@ def test_three_darts_repeat_and_finished_timestamp(frame, replay):
     assert replay(frame) == []
 
 
+@pytest.mark.parametrize("state_first", [True, False])
+def test_captured_calibration_overrides_completed_visit_and_takeout(replay, state_first):
+    frames = json.loads((Path(__file__).parent / "fixtures/live-visits.json").read_text())["X01"]
+    replay(frames[-1])
+    replay({"event": "Takeout started"}, "board.events")
+    assert replay.normalizer.current_state(True)["phase"] == "takeout"
+
+    state = {"status": "Calibrating", "event": "Calibration started", "numThrows": 0}
+    messages = [(state, "board.state"), ({"event": "Calibration started"}, "board.events")]
+    if not state_first:
+        messages.reverse()
+    for data, event in messages:
+        replay(data, event)
+        view = replay.normalizer.current_state(True)
+        assert view["phase"] == "waiting"
+        assert view["reason"] == "Board is calibrating"
+        assert view["turn_score"] == 14
+    assert names(replay.bus.normalized_history).count("calibration_started") == 1
+
+    # A repeated scoring state cannot override the board's calibration status.
+    replay(frames[-1])
+    assert replay.normalizer.current_state(True)["phase"] == "waiting"
+    replay({"event": "Calibration finished"}, "board.events")
+    replay({"status": "Throw", "event": "Calibration finished", "numThrows": 0}, "board.state")
+    next_visit = deepcopy(frames[0])
+    next_visit["turns"][0]["id"] = "after-calibration"
+    replay(next_visit)
+    replay({"status": "Throw", "event": "Manual reset", "numThrows": 0}, "board.state")
+    assert replay.normalizer.current_state(True)["phase"] == "ready"
+
+
+def test_calibration_outside_a_match_waits_until_finished():
+    bus = EventBus()
+    normalizer = EventNormalizer(BOARD_ID, bus)
+    normalizer.consume(bus.publish("cloud", "board.events", {"event": "Calibration started"}))
+    assert normalizer.current_state(True)["phase"] == "waiting"
+    normalizer.consume(bus.publish("cloud", "board.events", {"event": "Calibration finished"}))
+    assert normalizer.current_state(True)["phase"] == "idle"
+
+
 def test_batched_darts_are_all_delivered(frame, replay):
     for _ in range(3):
         add_dart(frame)

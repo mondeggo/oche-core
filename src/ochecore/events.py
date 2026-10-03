@@ -390,6 +390,7 @@ class EventNormalizer:
         self.invalid_states = 0
         self.emitted = 0
         self.readiness: str | None = None
+        self.calibrating = False
         self.board_event: str | None = None
         self.board_throws: int | None = None
         self.state_valid = False
@@ -406,6 +407,7 @@ class EventNormalizer:
         self.takeout_context = None
         self.synchronized = False
         self.readiness = None
+        self.calibrating = False
         self.board_event = None
         self.board_throws = None
         self.state_valid = False
@@ -418,6 +420,7 @@ class EventNormalizer:
         self.state_valid = False
         self.takeout_is_local = False
         self.readiness = None
+        self.calibrating = False
         self.board_event = None
         self.board_throws = None
         self.takeout_phase = None
@@ -434,6 +437,7 @@ class EventNormalizer:
             self.readiness = None
             return
         status = status.lower().replace("_", " ").replace("-", " ").strip()
+        self.calibrating = status == "calibrating"
         if status in {"throw", "ready", "ready for throw"}:
             self.readiness = "ready"
         elif status in {"takeout", "takeout in progress", "removing darts"}:
@@ -458,6 +462,8 @@ class EventNormalizer:
         if not available:
             return result
         if not self.match_id:
+            if self.calibrating:
+                return {**result, "reason": "Board is calibrating"}
             return {**result, "phase": "idle", "reason": "No active match"}
         if frame is None:
             return {**result, "reason": "Waiting for match state"}
@@ -472,6 +478,8 @@ class EventNormalizer:
             if active_turn and active_turn.throws
             else None
         )
+        if self.calibrating:
+            return {**result, "reason": "Board is calibrating"}
         completed = turn and (
             len(turn.throws) == 3
             or turn.busted
@@ -610,7 +618,10 @@ class EventNormalizer:
         }:
             self._emit(action.replace(" ", "_"), raw, self._context(self.frame))
             if action == "calibration started":
+                self.calibrating = True
                 self.readiness = "waiting"
+            elif action == "calibration finished":
+                self.calibrating = False
         phases = {
             "takeout started": "takeout_started",
             "takeout start": "takeout_started",

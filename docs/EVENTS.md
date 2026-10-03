@@ -77,6 +77,8 @@ messages were verified against the October 2 X01 and Cricket capture.
 `manual_reset`, `calibration_started` and `calibration_finished` are normalized from the board
 event stream. Their paired board-state messages update readiness without emitting duplicates.
 These board-wide events can arrive outside a match and do not require a player.
+Calibration holds the phase at `waiting`, even when the last visit is complete or a takeout
+was in progress. Finishing calibration does not invent readiness; a fresh board status supplies it.
 
 ### Raw frames
 
@@ -134,6 +136,9 @@ Random Checkout and 121; it is null for modes that do not count down. Neither is
 | `match_win` | The state reports a match winner; `score` |
 | `takeout_started` | Explicit board/match takeout-start event |
 | `takeout_finished` | Explicit board/match takeout-finished event |
+| `manual_reset` | Explicit board reset event |
+| `calibration_started` | Explicit board calibration-start event |
+| `calibration_finished` | Explicit board calibration-finished event |
 
 `dart` contains its stable `id`, one-based `position`, `segment` and `points`. Segment fields
 are `name`, `number`, `multiplier` and `bed`. Dart points are number × multiplier: T20 is 60,
@@ -176,6 +181,14 @@ It confirmed `Throw` as an explicit board-ready status and `0001-01-01T00:00:00Z
 unfinished visit, rather than an end-of-turn signal. Paired board state/event frames preserve
 readiness; scored darts do not invalidate a matching board throw count. Reduced, anonymized
 visits cover this behavior and a real dart correction in the regression tests.
+
+Rechecked October 3: the same 490-frame file remains the latest capture. It contains 182 full
+scoring states (150 X01 and 32 Cricket) plus one partial match update. Ordered replay accepts
+every full state and emits 334 normalized events, including 114 throws and two corrections.
+Calibration exposed a phase issue after completed visits: a remembered takeout could override
+the explicit `Calibrating` status. Calibration now takes priority and shows `waiting`, including
+outside a match. All seven captured calibration states show this phase after the fix. These
+counts describe replay of the capture; it does not include the service's REST snapshots.
 
 ## Comparison with supplied resources
 
