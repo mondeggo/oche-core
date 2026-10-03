@@ -673,43 +673,21 @@ pre {
   }
 }
 
-/* WLED editor */
-.wled-discovered-device {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border);
-}
-.wled-discovered-device > div {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.wled-discovered-device .hint {
-  margin: 4px 0 0;
-}
+/* Shared integration forms */
 .wled-grid,
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 18px;
 }
-.check-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  margin: 0;
-}
+.check-label,
 .checkbox {
   display: flex;
   align-items: center;
   gap: 9px;
 }
-@media (max-width: 600px) {
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
+.check-label {
+  margin: 0;
 }
 input[type="checkbox"] {
   width: 17px;
@@ -723,119 +701,566 @@ input[type="color"] {
   padding: 4px;
   min-width: 48px;
 }
-.wled-target-heading {
-  margin-top: 32px;
+@media (max-width: 600px) {
+  .form-grid,
+  .wled-grid {
+    grid-template-columns: 1fr;
+  }
 }
-.wled-outputs {
+
+/* WLED workspace */
+.wled-overview {
+  display: grid;
+  grid-template-columns: 1fr minmax(200px, 34%);
+  gap: 20px 32px;
+  border-top: 2px solid var(--accent);
+}
+.wled-live {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.wled-live .eyebrow {
+  margin-bottom: 6px;
+}
+#wled-phase {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+#wled-phase::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--offline);
+}
+#wled-phase[data-phase="ready"]::before {
+  background: var(--online);
+}
+#wled-phase[data-phase="takeout"]::before {
+  background: var(--warning-text);
+}
+#wled-phase[data-phase="waiting"]::before {
+  background: var(--accent);
+}
+.wled-profile-picker label {
+  margin: 0 0 6px;
+}
+.wled-profile-picker .hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+.wled-profile-tools {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.wled-profile-tools summary {
+  color: var(--muted);
+  font-weight: 500;
+}
+#wled-profile-delete {
+  margin-top: 12px;
+  color: var(--error);
+}
+.wled-workspace {
+  padding: 24px;
+}
+.wled-device-picker {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.wled-device-picker label {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.wled-device-picker select {
+  margin-top: 6px;
+}
+.wled-controller-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 12px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 22px;
 }
-.wled-outputs button {
-  flex: 1 1 180px;
+#wled-device-status {
+  flex: 1;
+  min-width: 180px;
   display: grid;
-  gap: 5px;
-  text-align: left;
-  padding: 12px 14px;
+  gap: 3px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
-.wled-outputs button span {
+.wled-connection-state {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 13px;
+}
+.wled-connection-state::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  background: var(--offline);
+  border-radius: 50%;
+}
+.wled-connection-state[data-connected="true"]::before {
+  background: var(--online);
+}
+.wled-power {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  background: var(--inset);
+  border-radius: 8px;
+}
+.wled-power button {
+  min-height: 32px;
+  padding: 5px 10px;
+  border-color: transparent;
+  background: transparent;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 400;
 }
-.wled-outputs button[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: var(--selected);
-  color: var(--selected-text);
+.wled-power button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+#wled-probe {
+  font-size: 12px;
+  min-height: 40px;
+}
+.wled-connection {
+  margin-top: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.wled-connection > summary,
+.wled-target-setup > summary {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12px;
+}
+.wled-remove {
+  background: transparent;
+  color: var(--error);
+  border-color: transparent;
+  font-size: 12px;
+  padding-inline: 8px;
+}
+.wled-discovered-device {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.wled-discovered-device > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.wled-discovered-device .hint {
+  margin-top: 4px;
 }
 #wled-outputs-section {
   margin-top: 24px;
 }
+#wled-outputs-section .panel-heading {
+  margin-bottom: 10px;
+}
+#wled-outputs-section .panel-heading .hint {
+  font-size: 11px;
+}
+.wled-outputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.wled-outputs button {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 2px 10px;
+  justify-content: stretch;
+  align-items: center;
+  text-align: left;
+  padding: 16px;
+  border-color: var(--border);
+  background: var(--input);
+  border-radius: 10px;
+}
+.wled-outputs button strong {
+  font-size: 14px;
+}
+.wled-output-kind {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.wled-output-detail {
+  grid-column: 1 / -1;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.wled-output-icon {
+  width: 26px;
+  height: 26px;
+  grid-row: 1 / 3;
+  border-radius: 50%;
+  border: 5px solid var(--border);
+}
+.wled-output-icon[data-mode="color"],
+.wled-output-icon[data-mode="color_white"] {
+  border: 0;
+  background: conic-gradient(#d96072, #d3af6b, #6baa90, #7b8bd0, #d96072);
+  mask: radial-gradient(circle, transparent 43%, #000 46%);
+}
+.wled-output-icon[data-mode="white"] {
+  border-color: #d5cba7;
+  box-shadow: 0 0 12px #cabc8b22;
+}
+.wled-outputs button[aria-pressed="true"] {
+  background: var(--selected);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  color: var(--selected-text);
+}
+.wled-outputs button:hover {
+  border-color: var(--hover-border);
+}
+.wled-target-heading {
+  margin-top: 30px;
+}
+.wled-target-heading p {
+  margin-top: 3px;
+  font-size: 12px;
+}
+#wled-add-target {
+  font-size: 12px;
+  white-space: normal;
+}
+.wled-empty {
+  text-align: center;
+  background: var(--input);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 28px 20px;
+}
+.wled-empty h3 {
+  margin: 6px 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.wled-empty p {
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 380px;
+  margin: 6px auto 0;
+}
+.wled-light-icon {
+  display: block;
+  font-size: 30px;
+  color: var(--brand);
+  line-height: 1.3;
+}
+#wled-no-device {
+  margin-top: 24px;
+}
 .wled-target {
-  margin-top: 22px;
-  padding: 20px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
+  margin-top: 16px;
+  padding: 20px;
 }
 .wled-target > summary {
   font-size: 15px;
+  overflow-wrap: anywhere;
 }
-.wled-flow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 16px 0;
-}
-.wled-flow button {
-  font-size: 12px;
-}
-.wled-flow button[aria-current="step"] {
-  background: var(--selected);
-  color: var(--selected-text);
-  border-color: var(--accent);
-}
-.wled-appearance {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: flex-end;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border);
-}
-.wled-appearance label {
-  margin: 0;
-  font-size: 12px;
-  flex: 0 0 72px;
-  min-width: 0;
-}
-.wled-appearance > span,
-.wled-appearance > label:first-child {
-  flex: 1 1 125px;
-  font-weight: 500;
-  align-self: center;
-}
-.wled-appearance > label:first-child:has(input[type="checkbox"]) {
+.wled-target-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
 }
-.wled-appearance [data-native-effect] {
-  flex: 2 1 135px;
+.wled-target-toolbar p {
+  margin: 0;
+  font-size: 12px;
 }
-.wled-appearance label:has([data-value="name_filter"]) {
-  flex: 2 1 150px;
+.wled-target-toolbar label {
+  font-size: 12px;
+  white-space: nowrap;
 }
-.wled-appearance [data-colour-control] {
-  flex: 0 0 64px;
+.wled-target-setup {
+  padding-bottom: 16px;
 }
-.wled-appearance button {
-  flex: 0 0 auto;
+.wled-target-setup .wled-remove {
+  margin-top: 10px;
 }
-.wled-appearance > span {
+.wled-editor-tabs {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--border);
+}
+.wled-editor-tabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  min-height: 40px;
+  padding: 8px 2px;
   font-size: 13px;
 }
-.wled-appearance input,
-.wled-appearance select {
+.wled-editor-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+.wled-editor-tabs button:hover {
+  color: var(--text);
+}
+.wled-section-intro {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 16px 0;
+  max-width: 540px;
+}
+.wled-phase-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.wled-appearance {
+  border-bottom: 1px solid var(--border);
+  padding: 14px 0;
+}
+.wled-rule-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.wled-rule-heading label {
+  margin: 0;
+  font-weight: 500;
+  font-size: 13px;
+  flex-direction: row-reverse;
+}
+.wled-rule-heading strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.wled-rule-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-top: 14px;
+}
+.wled-rule-controls label {
+  margin: 0;
+  font-size: 11px;
+  flex: 0 0 66px;
+  min-width: 0;
+  font-weight: 500;
+}
+.wled-rule-controls input,
+.wled-rule-controls select {
+  margin-top: 5px;
+  min-height: 36px;
+  font-size: 12px;
+  padding: 7px 9px;
+}
+.wled-rule-controls [data-native-effect] {
+  flex: 1 1 140px;
+}
+.wled-rule-controls [data-colour-control] {
+  flex: 0 0 46px;
+}
+.wled-rule-controls input[type="color"] {
+  padding: 3px;
+  min-width: 0;
+  height: 36px;
+  cursor: pointer;
+}
+.wled-rule-controls button {
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.wled-rule-controls .wled-brightness {
+  flex: 1 1 90px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+}
+.wled-brightness output {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.wled-rule-controls input[type="range"] {
+  grid-column: 1 / -1;
+  border: none;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  min-height: 36px;
+  height: 36px;
+  accent-color: var(--accent);
+  background: transparent;
+}
+.wled-rule-controls label:has([data-value="name_filter"]) {
+  flex: 1 1 160px;
+}
+.wled-phase-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  border-top: 3px solid var(--phase-colour, var(--border));
+}
+.wled-phase-card[data-color-mode="white"] {
+  border-top-color: #d5cba7;
+}
+.wled-phase-card[data-color-mode="on_off"] {
+  border-top-color: var(--muted);
+}
+.wled-phase-card .wled-rule-heading {
+  display: block;
+}
+.wled-phase-card .wled-rule-heading p {
+  font-size: 11px;
+  color: var(--muted);
   margin-top: 4px;
+  min-height: 33px;
 }
-#wled-device-status:empty {
-  display: none;
+.wled-phase-card [data-native-effect] {
+  flex-basis: 100%;
 }
-@media (max-width: 800px) {
-  .wled-appearance > span,
-  .wled-appearance > label:first-child {
-    flex-basis: 100%;
+.wled-phase-card [data-preview] {
+  flex: 1 0 100%;
+  background: transparent;
+  border-color: var(--border);
+  margin-top: 2px;
+}
+.wled-phase-card[aria-current="step"] {
+  border-color: var(--accent);
+}
+.wled-phase-card[aria-current="step"] .wled-rule-heading strong::after {
+  content: "NOW";
+  color: var(--selected-text);
+  background: var(--selected);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  margin-left: 8px;
+}
+.wled-event-group {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 16px;
+}
+.wled-event-group > summary {
+  padding: 16px 0;
+  font-size: 13px;
+}
+.wled-event-group .wled-appearance:first-of-type {
+  border-top: 1px solid var(--border);
+}
+.wled-event-group .wled-appearance:last-child {
+  border-bottom: 0;
+}
+.wled-save-bar {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 1200px) {
+  .wled-phase-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .wled-appearance [data-native-effect] {
-    flex-basis: 100%;
+}
+#wled-save-state {
+  font-size: 11px;
+}
+#wled-save-state:not(.error)::before {
+  content: "✓";
+  color: var(--online);
+  margin-right: 6px;
+}
+@media (max-width: 1000px) {
+  .wled-workspace {
+    padding: 20px;
+  }
+  .wled-controller-bar {
+    gap: 10px;
+  }
+  .wled-outputs {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   }
 }
-@media (max-width: 480px) {
-  .wled-grid {
+@media (max-width: 600px) {
+  .wled-overview {
     grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .wled-device-picker {
+    flex-wrap: wrap;
+  }
+  .wled-device-picker label {
+    flex-basis: 100%;
+  }
+  .wled-device-picker button {
+    flex: 1;
+  }
+  .wled-controller-bar #wled-device-status {
+    flex-basis: 100%;
+  }
+  .wled-controller-bar #wled-probe {
+    flex: 1;
   }
   .wled-target {
     padding: 14px;
+  }
+  .wled-target-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .wled-target-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .wled-editor-tabs {
+    gap: 18px;
+  }
+}
+@media (max-width: 440px) {
+  .wled-phase-grid {
+    grid-template-columns: 1fr;
+  }
+  .wled-outputs {
+    grid-template-columns: 1fr;
+  }
+  .wled-phase-card .wled-rule-heading p {
+    min-height: 0;
   }
 }

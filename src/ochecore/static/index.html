@@ -276,31 +276,20 @@
       </section>
 
       <section data-view="wled" aria-label="WLED settings" hidden>
-        <div class="panel">
-          <div class="panel-heading">
-            <h2>Current phase</h2>
-            <span id="wled-phase" class="badge">Waiting</span>
+        <div class="panel wled-overview">
+          <div class="wled-live">
+            <span class="eyebrow">Live board state</span>
+            <strong id="wled-phase">Waiting</strong>
+            <p id="wled-reason" class="hint">Loading service state…</p>
           </div>
-          <p id="wled-reason" class="muted">Loading service state…</p>
-          <div id="wled-device-status" class="hint" role="status"></div>
-          <p id="wled-error" class="error" role="status" hidden></p>
-        </div>
-        <div class="panel">
-          <h2>Lighting profile</h2>
-          <label for="wled-profile">Active profile</label>
-          <div class="field-row">
+          <div class="wled-profile-picker">
+            <label for="wled-profile">Lighting profile</label>
             <select id="wled-profile" disabled></select>
-            <button id="wled-profile-delete" type="button" disabled>
-              Remove profile
-            </button>
+            <span class="hint">Your colours and effects, saved together.</span>
           </div>
-          <p class="hint">
-            Profiles share your devices and targets. Each keeps its own phase
-            colours, event effects, player colours and matrix colour.
-          </p>
-          <details class="advanced">
-            <summary>Create a profile</summary>
-            <label for="wled-profile-name">Name</label>
+          <details class="wled-profile-tools">
+            <summary>Manage profiles</summary>
+            <label for="wled-profile-name">New profile name</label>
             <div class="field-row">
               <input
                 id="wled-profile-name"
@@ -311,68 +300,89 @@
                 Copy current profile
               </button>
             </div>
+            <button id="wled-profile-delete" type="button" disabled>
+              Remove profile
+            </button>
+            <p class="hint">
+              Profiles share devices. Lighting rules belong to each profile.
+            </p>
           </details>
         </div>
-        <form id="wled-form" class="panel">
-          <div class="panel-heading">
-            <h2>Devices and lighting</h2>
-            <a class="text-link" href="#integrations">Manage integration</a>
-          </div>
-          <p class="hint">
-            Changes save automatically. Preview a phase or effect beside its
-            settings.
-          </p>
-          <div class="actions">
+        <p id="wled-error" class="error" role="status" hidden></p>
+        <form id="wled-form" class="panel wled-workspace">
+          <div class="wled-device-picker">
+            <label for="wled-device"
+              >Controller
+              <select id="wled-device">
+                <option value="">No devices configured</option>
+              </select>
+            </label>
             <button id="wled-discover" type="button" disabled>
-              Discover devices
+              Find devices
             </button>
-            <span id="wled-discovery-status" class="hint" role="status">
-              Find controllers on OcheCore's local network.
-            </span>
+            <button id="wled-add-device" type="button">Add manually</button>
           </div>
+          <p id="wled-discovery-status" class="hint" role="status" hidden></p>
           <div
             id="wled-discovered"
             aria-label="Discovered WLED controllers"
             hidden
           ></div>
-          <label for="wled-device">Device</label>
-          <div class="field-row">
-            <select id="wled-device">
-              <option value="">No devices configured</option>
-            </select>
-            <button id="wled-add-device" type="button">Add device</button>
+          <div id="wled-no-device" class="wled-empty" hidden>
+            <span class="wled-light-icon" aria-hidden="true">✧</span>
+            <h2>Bring your board to life</h2>
+            <p>Find a WLED controller on your network, or add its address.</p>
           </div>
           <div id="wled-device-editor" hidden>
-            <div class="wled-grid">
-              <label>
-                Name
-                <input id="wled-name" maxlength="80" required />
-              </label>
-              <label>
-                WLED address
-                <input
-                  id="wled-url"
-                  type="url"
-                  placeholder="http://wled.local"
-                  required
-                />
-              </label>
-            </div>
-            <div class="actions">
-              <label class="check-label">
-                <input id="wled-device-enabled" type="checkbox" />
-                Automatic lighting
-              </label>
+            <div class="wled-controller-bar">
+              <div id="wled-device-status" class="hint" role="status"></div>
+              <div
+                class="wled-power"
+                role="group"
+                aria-label="Controller power"
+              >
+                <button id="wled-power-on" type="button">Lights on</button>
+                <button id="wled-power-off" type="button">Lights off</button>
+              </div>
               <button id="wled-probe" type="button">Check connection</button>
-              <button id="wled-power-on" type="button">Lights on</button>
-              <button id="wled-power-off" type="button">Lights off</button>
-              <button id="wled-remove-device" type="button">
-                Remove device
-              </button>
             </div>
-            <p id="wled-capabilities" class="hint"></p>
+            <details id="wled-connection" class="wled-connection">
+              <summary>Controller settings</summary>
+              <div class="wled-grid">
+                <label>
+                  Name
+                  <input id="wled-name" maxlength="80" required />
+                </label>
+                <label>
+                  WLED address
+                  <input
+                    id="wled-url"
+                    type="url"
+                    placeholder="http://wled.local"
+                    required
+                  />
+                </label>
+              </div>
+              <div class="actions">
+                <label class="check-label">
+                  <input id="wled-device-enabled" type="checkbox" />
+                  Automatic lighting
+                </label>
+                <button
+                  id="wled-remove-device"
+                  class="wled-remove"
+                  type="button"
+                >
+                  Remove device
+                </button>
+              </div>
+              <p id="wled-capabilities" class="hint"></p>
+            </details>
             <div id="wled-outputs-section" hidden>
-              <h2>LED outputs</h2>
+              <div class="panel-heading">
+                <h2>Choose an output</h2>
+                <span class="hint">Reported by WLED</span>
+              </div>
               <div
                 id="wled-outputs"
                 class="wled-outputs"
@@ -381,18 +391,20 @@
               ></div>
             </div>
             <div class="panel-heading wled-target-heading">
-              <h2>Lighting targets</h2>
+              <div>
+                <h2 id="wled-target-heading">Lighting rules</h2>
+                <p class="hint">Changes save automatically to your profile.</p>
+              </div>
               <button id="wled-add-target" type="button">Add target</button>
             </div>
-            <p class="hint">
-              Each output has its own targets and rules. Choose segments already
-              configured in WLED. Pixel indices start at zero within a segment.
-              Pixel control freezes that segment’s native effect.
-            </p>
-            <p id="wled-output-empty" class="hint" role="status" hidden></p>
+            <div id="wled-output-empty" class="wled-empty" role="status" hidden>
+              <span class="wled-light-icon" aria-hidden="true">✧</span>
+              <h3>No lighting rules yet</h3>
+              <p id="wled-output-empty-text"></p>
+            </div>
             <div id="wled-targets"></div>
           </div>
-          <div class="actions">
+          <div class="actions wled-save-bar">
             <span id="wled-save-state" class="hint" role="status"
               >All changes saved</span
             >
@@ -405,52 +417,106 @@
         <template id="wled-target-template">
           <details class="wled-target" open>
             <summary data-title>Lighting target</summary>
-            <div class="wled-grid">
-              <label>
-                Name
-                <input data-field="name" maxlength="80" required />
-              </label>
-              <label>
-                Mode
-                <select data-field="mode">
-                  <option value="segment">Whole segment</option>
-                  <option value="pixels">LED range / individual LED</option>
-                  <option value="matrix">Matrix score</option>
-                </select>
-              </label>
-              <label>
-                WLED segment
-                <select data-field="segment" required></select>
-              </label>
-              <label class="check-label">
-                <input data-field="enabled" type="checkbox" />
-                Enable target
-              </label>
+            <div class="wled-target-toolbar">
+              <p data-output-note class="hint"></p>
+              <label class="check-label"
+                ><input data-field="enabled" type="checkbox" /> Respond to
+                game</label
+              >
             </div>
-            <p data-output-note class="hint"></p>
-            <div data-pixels class="wled-grid" hidden>
-              <label>
-                First LED
-                <input
-                  data-field="start"
-                  type="number"
-                  min="0"
-                  max="65535"
-                  required
-                />
-              </label>
-              <label data-count>
-                LED count
-                <input
-                  data-field="count"
-                  type="number"
-                  min="1"
-                  max="1024"
-                  required
-                />
-              </label>
+            <details class="wled-target-setup">
+              <summary>Target setup</summary>
+              <div class="wled-grid">
+                <label>
+                  Name
+                  <input data-field="name" maxlength="80" required />
+                </label>
+                <label>
+                  Mode
+                  <select data-field="mode">
+                    <option value="segment">Whole segment</option>
+                    <option value="pixels">LED range / individual LED</option>
+                    <option value="matrix">Matrix score</option>
+                  </select>
+                </label>
+                <label>
+                  WLED segment
+                  <select data-field="segment" required></select>
+                </label>
+              </div>
+              <div data-pixels class="wled-grid" hidden>
+                <label>
+                  First LED
+                  <input
+                    data-field="start"
+                    type="number"
+                    min="0"
+                    max="65535"
+                    required
+                  />
+                </label>
+                <label data-count>
+                  LED count
+                  <input
+                    data-field="count"
+                    type="number"
+                    min="1"
+                    max="1024"
+                    required
+                  />
+                </label>
+              </div>
+              <p class="hint">
+                Use a segment configured in WLED. LED ranges start at zero
+                within that segment.
+              </p>
+              <button data-remove type="button" class="wled-remove">
+                Remove target
+              </button>
+            </details>
+            <div
+              class="wled-editor-tabs"
+              role="tablist"
+              aria-label="Lighting settings"
+            >
+              <button
+                type="button"
+                role="tab"
+                data-editor-tab="phases"
+                aria-selected="true"
+              >
+                Phases
+              </button>
+              <button
+                type="button"
+                role="tab"
+                data-editor-tab="events"
+                aria-selected="false"
+                tabindex="-1"
+              >
+                Events
+              </button>
+              <button
+                type="button"
+                role="tab"
+                data-editor-tab="players"
+                aria-selected="false"
+                tabindex="-1"
+              >
+                Players
+              </button>
+              <button
+                type="button"
+                role="tab"
+                data-editor-tab="display"
+                aria-selected="false"
+                tabindex="-1"
+                hidden
+              >
+                Score display
+              </button>
             </div>
-            <div data-matrix hidden>
+            <div data-matrix data-editor-panel="display" role="tabpanel" hidden>
               <div class="wled-grid">
                 <label>
                   Display
@@ -526,50 +592,31 @@
                 <button data-test type="button">Preview score</button>
               </div>
             </div>
-            <h3>Event matrix</h3>
-            <p class="hint">
-              Rules apply only to this target in the selected profile.
-            </p>
-            <nav class="wled-flow" data-flow aria-label="Lighting flow">
-              <button type="button" data-flow-step="idle">Idle</button>
-              <button type="button" data-flow-step="ready">
-                Ready to throw
-              </button>
-              <button type="button" data-flow-step="hits">Hit</button>
-              <button type="button" data-flow-step="takeout">
-                Remove darts
-              </button>
-              <button type="button" data-flow-step="waiting">
-                Wait / next player
-              </button>
-              <button type="button" data-flow-step="victories">Victory</button>
-            </nav>
-            <details data-phases class="advanced" open>
-              <summary>Phase colours</summary>
-              <p class="hint">
-                Preview uses the current settings for 3 seconds, then restores
-                the lights.
+            <div data-phases data-editor-panel="phases" role="tabpanel">
+              <p class="wled-section-intro">
+                Set the lighting for each stage of your game. Preview lasts 3
+                seconds.
               </p>
-              <div data-phase-rows></div>
-            </details>
-            <p class="hint">
-              Enable an event to give it a temporary effect. Local hits and wins
-              only; victory takes priority. The current phase returns when the
-              effect ends.
-            </p>
-            <div data-effect-rows></div>
-            <details data-player-rules class="advanced">
-              <summary>Throw — players</summary>
-              <p class="hint">
-                Override ready-to-throw colours for local players. An empty name
-                uses the player's match position; a name matches any player
-                containing that text. The first enabled match wins. These
-                colours last while the board is ready.
+              <div data-phase-rows class="wled-phase-grid"></div>
+            </div>
+            <div data-editor-panel="events" role="tabpanel" hidden>
+              <p class="wled-section-intro">
+                Celebrate a hit or a win, then return to the current phase.
+                Enable just the events you want.
+              </p>
+              <div data-effect-rows></div>
+            </div>
+            <div
+              data-player-rules
+              data-editor-panel="players"
+              role="tabpanel"
+              hidden
+            >
+              <p class="wled-section-intro">
+                Give each local player their own ready-to-throw lighting. Match
+                by position or name.
               </p>
               <div data-player-rows></div>
-            </details>
-            <div class="actions">
-              <button data-remove type="button">Remove target</button>
             </div>
           </details>
         </template>

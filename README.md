@@ -209,13 +209,13 @@ Settings and login data are saved as JSON in `data/`; there is no database.
 ## WLED lighting and matrix scores
 
 Enable **WLED** in **All integrations**, then open its **Settings** or sidebar entry.
-Choose **Discover devices**, then **Add** next to a controller. Discovery shows verified
+Choose **Find devices**, then **Add** next to a controller. Discovery shows verified
 controllers by name and address. CLI/API discovery also works while automation is disabled.
-You can also use **Add device** to enter an HTTP address manually. **Check connection** uses
+You can also use **Add manually** to enter an HTTP address in **Controller settings**. **Check connection** uses
 the address currently in the form, including an unsaved address, and loads segments and effects.
 Valid edits save after a short pause; incomplete fields or failed saves keep the draft visible.
-The save indicator offers retry after errors. Add a target and choose its segment and mode.
-**LED outputs** groups targets by the controller's GPIO pins, LED type and length. Select an
+The save indicator offers retry after errors. Add a target; **Target setup** contains its segment and mode.
+Output cards show GPIO pins, colour/white capability, LED type and length. Select an
 output to edit its targets, or **All targets** to see the whole controller. Selection changes
 only the view. **Add target on GPIO …** uses an available segment on that output; an already
 used segment starts with the new target disabled to avoid overlapping rules.
@@ -225,7 +225,14 @@ The segment selector shows the corresponding GPIO labels. **Check connection** r
 this information. Older or locked firmware can still use segments without pin information.
 An output needs its own WLED segment for independent native effects; OcheCore does not change
 GPIO assignments or split segments automatically. The probe API/CLI includes an `outputs`
-list with pins, type and pixel range for headless setup.
+list with pins, type and pixel range for headless setup. Outputs and segments include
+`color_mode`: `color`, `white`, `color_white`, `on_off` or `unknown`.
+
+Colour/white labels describe WLED's configuration, not electrical detection of the attached strip.
+Type IDs follow [WLED's firmware definitions](https://github.com/wled/WLED/blob/v0.15.1/wled00/const.h).
+White-only outputs hide colour pickers and send neutral RGB plus white-channel values, supporting
+manual and automatic white extraction. Unknown types retain the normal controls. GPIO numbers alone
+never determine colour capability. New white targets start with steady white phases and no event effects.
 
 **Preview** beside a phase or game effect uses the current form for three seconds. Matrix
 settings have a score preview. Previews also work without a match or enabled automation.
@@ -240,7 +247,7 @@ control visible when metadata is unavailable.
 
 ### Lighting profiles
 
-Use **Copy current profile** to create a named profile, then adjust its colours and effects.
+Open **Manage profiles** and use **Copy current profile** to create a named profile, then adjust its colours and effects.
 Selecting a profile applies it immediately. Profiles share device addresses, target geometry,
 and automation switches; each stores phase appearances, event effects, player colours and matrix appearance.
 Existing installations start with a **Default** profile. Settings persist in `data/wled.json`.
@@ -256,17 +263,21 @@ waiting appearance; use **Lights off** when you want them dark.
   and row wiring. Corrections and silent reconnection snapshots update the displayed score.
 
 Defaults are green for confirmed ready, yellow for takeout, red for waiting and dim white
-when idle. The **Event matrix**, informed by AutoGlow 2's per-segment configuration, groups rules into:
+when idle. The **Phases** tab shows these stages with brightness sliders and inline previews.
+The **Events** tab, informed by AutoGlow 2's per-segment configuration, groups rules into:
 
 - **Match & victories:** leg and match wins.
 - **Hits & throws:** any dart, single, double, triple, outer bull, bullseye, miss, 180 and bust.
 - **Game flow & transitions:** match start/end, turn start, takeout start/end, manual reset,
   and calibration start/end.
-- **Throw — players:** up to ten ready-to-throw appearances. Empty name filters match the
-  player's one-based match position; a name filter matches a case-insensitive substring instead.
-  The first enabled matching slot wins. Player colours apply only to local players while ready.
 
-The flow strip opens the relevant settings and highlights the current phase. Phase/player colours
+The **Players** tab has up to ten ready-to-throw appearances. Empty name filters match the
+player's one-based match position; a name filter matches a case-insensitive substring instead.
+The first enabled matching slot wins. Player colours apply only to local players while ready.
+Matrix targets show **Score display** and **Events** instead. Tabs support arrow-key navigation.
+Disabled events keep their controls collapsed until enabled.
+
+The current phase is highlighted. Phase/player colours
 last while that state is active; event effects last for their configured duration (0.1–30 seconds).
 Match win has highest priority, followed by leg win, bust, 180, bullseye and other effects.
 A specific hit rule takes precedence over **Any dart** within each target. Corrections and new

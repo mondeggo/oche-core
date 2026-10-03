@@ -14,12 +14,26 @@
   let editRevision = 0;
   const capabilities = new Map();
   const selectedOutputs = new Map();
+  const selectedTabs = new Map();
   let outputSignature = "";
   const phases = {
     ready: "Ready to throw",
     takeout: "Remove darts",
     waiting: "Wait",
     idle: "Idle",
+  };
+  const phaseHints = {
+    ready: "Your turn. Step up to the oche.",
+    takeout: "Collect your darts from the board.",
+    waiting: "Hold your throw until the board is ready.",
+    idle: "Between games, keep the mood you like.",
+  };
+  const colourModes = {
+    color: "Colour",
+    white: "White",
+    color_white: "Colour + white",
+    on_off: "On / off",
+    unknown: "Type unavailable",
   };
   const effectGroups = [
     {
@@ -74,7 +88,7 @@
   });
   const newTarget = () => ({
     id: identity("target"),
-    name: "Lighting target",
+    name: "Board lighting",
     enabled: true,
     segment: 0,
     mode: "segment",
@@ -252,6 +266,8 @@
     selected = added.id;
     markChanged();
     render();
+    $("wled-connection").open = true;
+    $("wled-url").focus();
   }
 
   function renderDiscovery() {
@@ -299,13 +315,13 @@
     const element = document.createElement("input");
     element.type = type;
     element.dataset.value = name;
-    if (type === "checkbox") element.checked = value;
-    else element.value = value;
     if (min !== undefined) {
       element.min = min;
       element.max = max;
       element.required = true;
     }
+    if (type === "checkbox") element.checked = value;
+    else element.value = value;
     return element;
   }
 
@@ -313,18 +329,37 @@
     const row = document.createElement("div");
     row.className = "wled-appearance";
     row.dataset.rule = key;
-    const name = document.createElement("span");
+    row.classList.toggle("wled-phase-card", !isEffect);
+    const heading = document.createElement("div");
+    heading.className = "wled-rule-heading";
+    const name = document.createElement("strong");
     name.textContent = title;
-    if (isEffect)
-      row.append(label(title, input("checkbox", Boolean(value), "enabled")));
-    else row.append(name);
+    if (isEffect) {
+      const toggle = label(title, input("checkbox", Boolean(value), "enabled"));
+      toggle.className = "check-label";
+      heading.append(toggle);
+      const state = document.createElement("span");
+      state.dataset.ruleState = "";
+      state.className = "hint";
+      heading.append(state);
+    } else {
+      heading.append(name);
+      const description = document.createElement("p");
+      description.textContent = phaseHints[key];
+      heading.append(description);
+    }
+    row.append(heading);
+    const controls = document.createElement("div");
+    controls.className = "wled-rule-controls";
+    row.append(controls);
     const settings = value || { ...appearance(), duration: 2 };
+    row.style.setProperty("--phase-colour", settings.color);
     if (isPlayer) {
       row.dataset.playerSlot = key;
       const filter = input("text", settings.name_filter || "", "name_filter");
       filter.maxLength = 80;
       filter.placeholder = `Player ${key} by position`;
-      row.append(label("Name contains (optional)", filter));
+      controls.append(label("Name contains (optional)", filter));
     }
     const select = document.createElement("select");
     select.dataset.value = "effect";
@@ -340,33 +375,47 @@
       select.add(new Option(`Effect ${settings.effect}`, settings.effect));
     }
     select.value = settings.effect;
-    const effectLabel = label("WLED effect", select);
+    const effectLabel = label("Effect", select);
     effectLabel.dataset.nativeEffect = "";
     effectLabel.hidden = mode !== "segment";
-    row.append(effectLabel);
+    controls.append(effectLabel);
     const colour = label("Colour", input("color", settings.color, "color"));
     colour.dataset.colourControl = "";
-    row.append(colour);
-    row.append(
-      label(
-        "Brightness",
-        input("number", settings.brightness, "brightness", 0, 255),
-      ),
+    colour.querySelector("input").addEventListener("input", (event) => {
+      row.style.setProperty("--phase-colour", event.target.value);
+    });
+    controls.append(colour);
+    const brightness = label(
+      "Brightness",
+      input("range", settings.brightness, "brightness", 0, 255),
     );
+    brightness.className = "wled-brightness";
+    const level = document.createElement("output");
+    brightness.append(level);
+    controls.append(brightness);
+    const updateLevel = () => {
+      const value = Number(brightness.querySelector("input").value);
+      level.textContent = value ? `${Math.round((value / 255) * 100)}%` : "Off";
+      brightness
+        .querySelector("input")
+        .setAttribute("aria-valuetext", level.textContent);
+    };
+    brightness.querySelector("input").addEventListener("input", updateLevel);
+    updateLevel();
     if (isEffect && !isPlayer) {
       const duration = input("number", settings.duration, "duration", 0.1, 30);
       duration.step = "0.1";
-      row.append(label("Seconds", duration));
+      controls.append(label("Seconds", duration));
     }
     const preview = document.createElement("button");
     preview.type = "button";
-    preview.textContent = "Preview";
+    preview.textContent = "▶ Preview";
     preview.dataset.preview = key;
     preview.setAttribute("aria-label", `Preview ${title.toLowerCase()}`);
     preview.addEventListener("click", () =>
       previewTarget(row.closest("[data-target]"), key, isEffect, isPlayer),
     );
-    row.append(preview);
+    controls.append(preview);
     select.addEventListener("change", () => updateAppearance(row));
     row
       .querySelector('[data-value="enabled"]')
@@ -381,8 +430,19 @@
     const native = field(root, "mode").value === "segment";
     const effect = Number(row.querySelector('[data-value="effect"]').value);
     const slots = deviceInfo()?.effect_colors?.[effect];
+    const colorMode = deviceInfo()?.segments?.find(
+      (segment) => segment.id === Number(field(root, "segment").value),
+    )?.color_mode;
+    row.dataset.colorMode = colorMode || "unknown";
     row.querySelector("[data-colour-control]").hidden =
-      native && slots && !slots[0];
+      ["white", "on_off"].includes(colorMode) ||
+      Boolean(native && slots && !slots[0]);
+    row.classList.toggle("is-enabled", active);
+    row.querySelector(".wled-rule-controls").hidden = !active;
+    if (enabled)
+      row.querySelector("[data-rule-state]").textContent = active
+        ? "On"
+        : "Off";
     row.querySelectorAll("input, select, button").forEach((control) => {
       control.disabled = working || (!active && control !== enabled);
     });
@@ -423,15 +483,38 @@
     const mode = field(root, "mode").value;
     root.querySelector("[data-pixels]").hidden = mode === "segment";
     root.querySelector("[data-count]").hidden = mode !== "pixels";
-    root.querySelector("[data-matrix]").hidden = mode !== "matrix";
-    root.querySelector("[data-phases]").hidden = mode === "matrix";
-    root.querySelector("[data-player-rules]").hidden = mode === "matrix";
-    root.querySelector("[data-flow]").hidden = mode === "matrix";
+    for (const tab of root.querySelectorAll("[data-editor-tab]")) {
+      const key = tab.dataset.editorTab;
+      tab.hidden =
+        key === "display"
+          ? mode !== "matrix"
+          : key !== "events" && mode === "matrix";
+    }
+    const selectedTab = selectedTabs.get(root.dataset.target) || "phases";
+    selectTab(
+      root,
+      root.querySelector(`[data-editor-tab="${selectedTab}"]`).hidden
+        ? mode === "matrix"
+          ? "display"
+          : "phases"
+        : selectedTab,
+    );
     root.querySelector("[data-test-score]").hidden = mode !== "matrix";
     root.querySelectorAll("[data-native-effect]").forEach((node) => {
       node.hidden = mode !== "segment";
     });
     root.querySelectorAll("[data-rule]").forEach(updateAppearance);
+  }
+
+  function selectTab(root, key) {
+    selectedTabs.set(root.dataset.target, key);
+    for (const tab of root.querySelectorAll("[data-editor-tab]")) {
+      const active = tab.dataset.editorTab === key;
+      tab.setAttribute("aria-selected", String(active));
+      tab.tabIndex = active ? 0 : -1;
+    }
+    for (const panel of root.querySelectorAll("[data-editor-panel]"))
+      panel.hidden = panel.dataset.editorPanel !== key;
   }
 
   const outputLabel = (output) =>
@@ -521,11 +604,21 @@
         button.dataset.output = output ? String(output.id) : "all";
         const name = document.createElement("strong");
         name.textContent = output ? outputLabel(output) : "All targets";
+        const icon = document.createElement("span");
+        icon.className = "wled-output-icon";
+        icon.dataset.mode = output?.color_mode || "unknown";
+        icon.setAttribute("aria-hidden", "true");
+        const kind = document.createElement("span");
+        kind.className = "wled-output-kind";
+        kind.textContent = output
+          ? colourModes[output.color_mode] || "Type unavailable"
+          : "Overview";
         const detail = document.createElement("span");
+        detail.className = "wled-output-detail";
         detail.textContent = output
-          ? `${output.type_name} · ${output.length} LEDs`
-          : "View all outputs together";
-        button.append(name, detail);
+          ? `${output.type_name} · ${output.length} ${output.length === 1 ? "LED" : "LEDs"}`
+          : "Every lighting target";
+        button.append(icon, name, kind, detail);
         button.addEventListener("click", () => {
           selectedOutputs.set(current.id, button.dataset.output);
           renderOutputs();
@@ -562,8 +655,16 @@
         matches.length > 1
           ? "This target spans multiple outputs. Create separate segments in WLED for independent effects."
           : matches.length
-            ? `${outputLabel(matches[0])} · ${matches[0].type_name}`
-            : "Check the connection to load the controller's outputs and segments.";
+            ? `${outputLabel(matches[0])} · ${colourModes[matches[0].color_mode] || matches[0].type_name}`
+            : "Output information unavailable. Check the connection.";
+      root.querySelectorAll("[data-rule]").forEach(updateAppearance);
+      const segment = info?.segments?.find(
+        (item) => item.id === Number(field(root, "segment").value),
+      );
+      matrixField(root, "color").closest("label").hidden = [
+        "white",
+        "on_off",
+      ].includes(segment?.color_mode);
     }
     const segments = outputSegments(selectedOutput, info);
     $("wled-add-target").disabled =
@@ -575,10 +676,13 @@
       : "Add target";
     $("wled-output-empty").hidden =
       visible > 0 && (!selectedOutput || segments.length > 0);
-    $("wled-output-empty").textContent =
+    $("wled-target-heading").textContent = selectedOutput
+      ? `Lighting on ${outputLabel(selectedOutput)}`
+      : "Lighting rules";
+    $("wled-output-empty-text").textContent =
       selectedOutput && !segments.length
         ? "This output needs its own segment in WLED. Create one there, then check the connection again."
-        : `No targets${selectedOutput ? ` on ${outputLabel(selectedOutput)}` : ""} yet. Add one to configure its colours and events.`;
+        : `Add a target${selectedOutput ? ` on ${outputLabel(selectedOutput)}` : ""} to set up phase lighting and event effects.`;
   }
 
   function render() {
@@ -592,6 +696,7 @@
     select.value = selected;
     const current = device();
     $("wled-device-editor").hidden = !current;
+    $("wled-no-device").hidden = !!current;
     $("wled-name").disabled = $("wled-url").disabled = !current;
     $("wled-targets").replaceChildren();
     if (!current) {
@@ -636,10 +741,11 @@
           );
       for (const group of effectGroups) {
         const section = document.createElement("details");
-        section.className = "advanced";
+        section.className = "wled-event-group";
         section.dataset.eventGroup = group.id;
         const heading = document.createElement("summary");
         heading.textContent = group.title;
+        section.open = group.id === "victories";
         section.append(heading);
         for (const [key, title] of Object.entries(group.effects))
           section.append(
@@ -660,19 +766,37 @@
               true,
             ),
           );
-      root.querySelectorAll("[data-flow-step]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const key = button.dataset.flowStep;
-          const section = root.querySelector(
-            key === "hits" || key === "victories"
-              ? `[data-event-group="${key}"]`
-              : "[data-phases]",
+      root.querySelectorAll("[data-editor-tab]").forEach((button) => {
+        const key = button.dataset.editorTab;
+        button.id = `${target.id}-tab-${key}`;
+        const panel = root.querySelector(`[data-editor-panel="${key}"]`);
+        panel.id = `${target.id}-panel-${key}`;
+        button.setAttribute("aria-controls", panel.id);
+        panel.setAttribute("aria-labelledby", button.id);
+        button.addEventListener("click", () => selectTab(root, key));
+        button.addEventListener("keydown", (event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+            return;
+          event.preventDefault();
+          const tabs = [...root.querySelectorAll("[data-editor-tab]")].filter(
+            (tab) => !tab.hidden,
           );
-          section.open = true;
-          section.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          const row = section.querySelector(`[data-rule="${key}"]`) || section;
-          row.querySelector("input, select")?.focus({ preventScroll: true });
+          const index =
+            event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? tabs.length - 1
+                : (tabs.indexOf(button) +
+                    (event.key === "ArrowRight" ? 1 : -1) +
+                    tabs.length) %
+                  tabs.length;
+          selectTab(root, tabs[index].dataset.editorTab);
+          tabs[index].focus();
         });
+      });
+      field(root, "name").addEventListener("input", () => {
+        root.querySelector("[data-title]").textContent =
+          field(root, "name").value || "Lighting target";
       });
       field(root, "mode").addEventListener("change", () => targetMode(root));
       root.querySelector("[data-remove]").addEventListener("click", () => {
@@ -757,26 +881,50 @@
     if (!latestStatus) return;
     $("wled-phase").textContent =
       phases[latestStatus.game.phase] || latestStatus.game.phase;
+    $("wled-phase").dataset.phase = latestStatus.game.phase;
     $("wled-reason").textContent = latestStatus.game.reason;
     renderOutputs();
     $("wled-targets")
-      .querySelectorAll("[data-flow-step]")
-      .forEach((button) => {
-        const active = button.dataset.flowStep === latestStatus.game.phase;
-        if (active) button.setAttribute("aria-current", "step");
-        else button.removeAttribute("aria-current");
+      .querySelectorAll(".wled-phase-card")
+      .forEach((card) => {
+        const active = card.dataset.rule === latestStatus.game.phase;
+        if (active) card.setAttribute("aria-current", "step");
+        else card.removeAttribute("aria-current");
       });
     const list = $("wled-device-status");
     list.replaceChildren();
-    latestStatus.devices.forEach((item) => {
-      const line = document.createElement("p");
-      line.textContent = `${item.name}: ${item.on === false ? "Lights off" : item.connected ? "Connected" : "Not connected"} · ${latestStatus.enabled && item.enabled ? "Automation enabled" : "Automation disabled"}${item.error ? ` — ${item.error}` : ""}`;
-      list.append(line);
-    });
+    const item = latestStatus.devices.find(
+      (item) =>
+        item.id === selected &&
+        origin(item.url) === origin($("wled-url").value.trim()),
+    );
+    if (item) {
+      const state = document.createElement("span");
+      state.className = "wled-connection-state";
+      state.dataset.connected = String(item.connected);
+      state.textContent = item.connected ? "Connected" : "Not connected";
+      const detail = document.createElement("span");
+      const power =
+        item.on === false
+          ? "Lights off"
+          : item.on === true
+            ? "Lights on"
+            : "Power unknown";
+      detail.textContent =
+        item.error ||
+        `${power} · ${latestStatus.enabled && item.enabled ? "Automatic lighting" : "Automation paused"}`;
+      list.append(state, detail);
+    } else if (device())
+      list.textContent = "Check this address to verify the connection.";
+    for (const on of [true, false])
+      $(`wled-power-${on ? "on" : "off"}`).setAttribute(
+        "aria-pressed",
+        String(!!item && item.on === on),
+      );
     const info = deviceInfo();
     $("wled-capabilities").textContent = info
-      ? `WLED ${info.version} · ${info.segments.map((segment) => `${segment.name} (ID ${segment.id}, ${segment.length} LEDs)`).join(" · ")}${info.on === false || info.brightness === 0 ? " · Master power or brightness is off in WLED." : ""}`
-      : "Enter the address and check the connection to load segments and effects. No save needed.";
+      ? `WLED ${info.version} · ${info.segments.length} segments · ${info.effects.length} effects`
+      : "Check the connection to load outputs, segments and effects.";
   }
 
   async function load() {
@@ -914,6 +1062,7 @@
   $("wled-discover").addEventListener("click", () =>
     work(async () => {
       const message = $("wled-discovery-status");
+      message.hidden = false;
       message.textContent =
         "Searching for WLED controllers… This takes a few seconds.";
       discovered = [];
@@ -966,6 +1115,12 @@
           80,
         );
       target.enabled = !!unused;
+      if (["white", "on_off"].includes(segment.color_mode)) {
+        for (const style of Object.values(target.phases))
+          style.color = "#ffffff";
+        target.phases.idle.brightness = 16;
+        target.effects = {};
+      }
     } else if (
       current.targets.some(
         (item) => item.enabled && item.segment === target.segment,

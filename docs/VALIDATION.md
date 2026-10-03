@@ -2,6 +2,30 @@
 
 Updated October 3, 2026. Terminal controls and the optional UI share the same headless service.
 
+## WLED editor and output capabilities
+
+All **223 Python tests** and Ruff checks pass after the capability and calibration changes.
+The only available debug capture still contains 490 frames from October 2. Its 182 complete
+X01/Cricket states replay without invalid states. Calibration now takes priority over stale
+takeout or completed visits; all seven captured calibration states show waiting.
+
+WLED bus labels use official firmware IDs, correcting outdated mappings in the AutoGlow reference.
+Tests cover colour, white, RGBW, CCT, on/off, network and unknown types; segment capability fallback;
+metadata refresh; neutral white payloads; black/off handling; and draft preview restoration.
+The live controller reports both GPIO 16 and GPIO 2 as WS281x colour outputs. This is its configured
+type, not physical strip detection. No hardware settings were changed.
+
+The editor now uses output cards, Phases/Events/Players tabs, brightness sliders, collapsed setup
+details and inline previews. Temporary jsdom checks cover autosave concurrency/retry/focus,
+profile switching, independent outputs, white picker hiding, new white target defaults, matrix
+tab switching, keyboard navigation and preserving brightness values above 100 on initial render.
+Browser review verified dark and light themes on desktop, phase/event layouts at a 390-pixel
+viewport without horizontal overflow, and no browser console errors. Lights remained off.
+
+The native server was restarted on `0.0.0.0:9180` and its health check passed. The wheel and
+source distribution build, and the isolated installed-package smoke check passes. Docker
+Desktop's Linux engine remains unavailable, so rebuilding the Docker image is still pending.
+
 ## WLED hardware outputs
 
 Read-only inspection of the user's WLED 0.15.1 controller confirmed two WS281x outputs:
