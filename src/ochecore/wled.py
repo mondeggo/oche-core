@@ -243,8 +243,11 @@ class Power(Model):
     on: bool = Field(strict=True)
 
 
-def rgb(appearance: Appearance, scale: bool = False) -> str:
+def rgb(appearance: Appearance, scale: bool = False, *, white: bool = False) -> str:
     values = [int(appearance.color[index : index + 2], 16) for index in (1, 3, 5)]
+    if white:
+        # Neutral RGB plus W works with manual and automatic white extraction.
+        values = [max(values)] * 4
     if scale:
         values = [round(value * appearance.brightness / 255) for value in values]
     return "".join(f"{value:02X}" for value in values)
@@ -266,7 +269,9 @@ DIGITS = {
 }
 
 
-def matrix_pixels(matrix: Matrix, value: int | None, appearance: Appearance) -> list[str]:
+def matrix_pixels(
+    matrix: Matrix, value: int | None, appearance: Appearance, *, white: bool = False
+) -> list[str]:
     width, height = matrix.width, matrix.height
     logical_w, logical_h = (height, width) if matrix.rotation in {90, 270} else (width, height)
     text = str(value) if isinstance(value, int) and 0 <= value <= 9999 else "---"
@@ -274,7 +279,7 @@ def matrix_pixels(matrix: Matrix, value: int | None, appearance: Appearance) -> 
         text = "---"
     pixels = ["000000"] * (width * height)
     offset_x, offset_y = (logical_w - (len(text) * 4 - 1)) // 2, (logical_h - 5) // 2
-    color = rgb(appearance, scale=True)
+    color = rgb(appearance, scale=True, white=white)
     for digit, character in enumerate(text):
         for row, bits in enumerate(DIGITS[character]):
             for column in range(3):
@@ -308,9 +313,17 @@ def player_appearance(target: Target, view: dict) -> Appearance | None:
     return None
 
 
-def payload(device: Device, view: dict, overlays: dict, preview: Preview | None = None) -> dict:
+def payload(
+    device: Device,
+    view: dict,
+    overlays: dict,
+    preview: Preview | None = None,
+    *,
+    info: dict | None = None,
+) -> dict:
     """Compose once per segment so independent pixel targets share one frozen frame."""
     segments: dict[int, dict] = {}
+    modes = {s["id"]: s.get("color_mode") for s in (info or {}).get("segments", [])}
     for target in device.targets:
         if not target.enabled:
             continue
@@ -319,13 +332,16 @@ def payload(device: Device, view: dict, overlays: dict, preview: Preview | None 
             overlay or player_appearance(target, view) or getattr(target.phases, view["phase"])
         )
         segment = segments.setdefault(target.segment, {"id": target.segment, "on": True})
+        white = modes.get(target.segment) == "white"
         if target.mode == "segment":
             segment.update(
                 frz=False,
                 fx=appearance.effect,
                 bri=appearance.brightness,
-                col=[list(bytes.fromhex(rgb(appearance)))],
+                col=[list(bytes.fromhex(rgb(appearance, white=white)))],
             )
+            if modes.get(target.segment) == "on_off":
+                segment["on"] = appearance.brightness > 0 and appearance.color != "#000000"
         else:
             segment.update(bri=255)
             indices = segment.setdefault("i", [])
@@ -336,9 +352,13 @@ def payload(device: Device, view: dict, overlays: dict, preview: Preview | None 
                     if preview and preview.target_id == target.id
                     else view.get(target.matrix.source)
                 )
-                indices.extend([target.start, *matrix_pixels(target.matrix, value, appearance)])
+                indices.extend(
+                    [target.start, *matrix_pixels(target.matrix, value, appearance, white=white)]
+                )
             else:
-                indices.extend([target.start, target.stop, rgb(appearance, scale=True)])
+                indices.extend(
+                    [target.start, target.stop, rgb(appearance, scale=True, white=white)]
+                )
     return {"seg": list(segments.values()), "tt": 0}
 
 
@@ -455,6 +475,12 @@ async def inspect_device(
             definitions = []  # Older firmware can still be probed and used.
         result["effect_colors"] = [effect_colors(value) for value in definitions]
     leds = info.get("leds")
+    light_capabilities = leds.get("seglc") if isinstance(leds, dict) else None
+    # WLED lists active segments in order, not by segment ID (IDs may have gaps).
+    if isinstance(light_capabilities, list) and len(light_capabilities) == len(segments):
+        for segment, value in zip(segments, light_capabilities, strict=True):
+            if type(value) is int and 0 <= value <= 7:
+                segment["light_capabilities"] = value
     result["outputs"] = parse_outputs(leds.get("ins") if isinstance(leds, dict) else None)
     if metadata:
         for path in ("/json/cfg", "/cfg.json"):
@@ -466,26 +492,46 @@ async def inspect_device(
             if outputs:
                 result["outputs"] = outputs
                 break
+    set_segment_modes(result)
     return result
 
 
 def parse_outputs(entries: object) -> list[dict]:
-    """Expose LED output geometry and pins without retaining other device settings."""
+    """Read configured bus types, not physical strip detection or GPIO assumptions."""
+    # WLED 0.15 bus IDs: wled00/const.h and Bus::hasRGB/hasWhite in bus_manager.h.
     names = {
-        20: "WS2811",
-        21: "TM1829",
+        18: "WS2812 white",
+        19: "WS2812 white x3",
+        20: "WS2812 CCT",
+        21: "WS2812 warm white / amber",
         22: "WS281x RGB",
-        24: "SK6812 RGBW",
-        25: "TM1814",
-        29: "WS2801",
-        30: "APA102",
-        31: "LPD8806",
+        23: "GS8608",
+        24: "WS2811 400 kHz",
+        25: "TM1829",
+        26: "UCS8903",
+        27: "APA106",
+        28: "FW1906 RGB+CCT",
+        29: "UCS8904 RGBW",
+        30: "SK6812 RGBW",
+        31: "TM1814 RGBW",
+        32: "WS2805 RGB+CCT",
+        33: "TM1914",
+        34: "SM16825 RGB+CCT",
         40: "On/off",
         41: "PWM white",
         42: "PWM CCT",
         43: "PWM RGB",
         44: "PWM RGBW",
         45: "PWM RGB+CCT",
+        50: "WS2801",
+        51: "APA102",
+        52: "LPD8806",
+        53: "P9813",
+        54: "LPD6803",
+        80: "DDP RGB",
+        82: "Art-Net RGB",
+        88: "DDP RGBW",
+        89: "Art-Net RGBW",
     }
     outputs = []
     for index, entry in enumerate(entries[:32] if isinstance(entries, list) else []):
@@ -499,6 +545,16 @@ def parse_outputs(entries: object) -> list[dict]:
         pins = (
             [p for p in pins if type(p) is int and 0 <= p < 255] if isinstance(pins, list) else []
         )
+        if type(kind) is not int or kind not in names:
+            mode = "unknown"
+        elif kind in {18, 19, 20, 21, 41, 42}:
+            mode = "white"
+        elif kind in {28, 29, 30, 31, 32, 34, 44, 45, 88, 89}:
+            mode = "color_white"
+        else:
+            mode = "on_off" if kind == 40 else "color"
+        if type(kind) is int and 80 <= kind <= 95:
+            pins = []  # Network buses encode an IP address in the pin array.
         outputs.append(
             {
                 "id": index,
@@ -507,12 +563,40 @@ def parse_outputs(entries: object) -> list[dict]:
                 "stop": start + length,
                 "length": length,
                 "type": kind if type(kind) is int else None,
+                "color_mode": mode,
                 "type_name": names.get(kind, f"LED type {kind}")
                 if type(kind) is int
                 else "LED output",
             }
         )
     return outputs
+
+
+def set_segment_modes(info: dict) -> None:
+    """Prefer fully covered bus types; segment capabilities describe virtual controls."""
+    for segment in info["segments"]:
+        value = segment.get("light_capabilities")
+        mode = "unknown"
+        if value is not None:
+            if value & 1:
+                mode = "color_white" if value & 2 else "color"
+            else:
+                mode = "white" if value & 6 else "on_off"
+        covered = segment["start"]
+        modes = set()
+        for output in sorted(info.get("outputs", []), key=lambda item: item["start"]):
+            if output["stop"] <= segment["start"] or output["start"] >= segment["stop"]:
+                continue
+            if output["start"] > covered:
+                break
+            covered = max(covered, output["stop"])
+            modes.add(output["color_mode"])
+        if covered >= segment["stop"] and modes and "unknown" not in modes:
+            if "color_white" in modes or {"color", "white"} <= modes:
+                mode = "color_white"
+            else:
+                mode = next(value for value in ("color", "white", "on_off") if value in modes)
+        segment["color_mode"] = mode
 
 
 def effect_colors(metadata: object) -> list[str | None]:
@@ -648,6 +732,7 @@ class DeviceWorker:
             for key in ("outputs", "effect_colors"):
                 if not self.info.get(key) and key in previous:
                     self.info[key] = previous[key]
+            set_segment_modes(self.info)
         validate_capabilities(self.device, self.info)
         return self.info
 
@@ -688,7 +773,9 @@ class DeviceWorker:
             test = self.preview[1]
             target = next(t for t in self.device.targets if t.id == test.target_id)
             overlays[target.id] = preview_appearance(target, test)
-        return payload(self.device, view, overlays, self.preview[1] if self.preview else None)
+        return payload(
+            self.device, view, overlays, self.preview[1] if self.preview else None, info=self.info
+        )
 
     async def send(self, body: dict) -> None:
         if body["seg"]:
@@ -740,7 +827,9 @@ class DeviceWorker:
                     and self.last_payload
                 ):
                     try:
-                        await self.send(payload(self.device, {"phase": "waiting"}, {}))
+                        await self.send(
+                            payload(self.device, {"phase": "waiting"}, {}, info=self.info)
+                        )
                     except ConnectionProblem:
                         pass
 
@@ -957,7 +1046,7 @@ class WLED:
         )
         async with worker.lock if worker else asyncio.Lock():
             snapshot = await request(self.http, device, "/json")
-            info = await inspect_device(self.http, device, data=snapshot)
+            info = await inspect_device(self.http, device, data=snapshot, metadata=True)
             validate_capabilities(device, info)
             state = snapshot["state"]
             segment = next(s for s in state["seg"] if s["id"] == target.segment)
@@ -994,7 +1083,9 @@ class WLED:
                     self.http,
                     device,
                     "/json/state",
-                    payload(device, {"phase": draft.phase}, {target.id: appearance}, draft),
+                    payload(
+                        device, {"phase": draft.phase}, {target.id: appearance}, draft, info=info
+                    ),
                 )
                 await asyncio.sleep(draft.duration)
             finally:

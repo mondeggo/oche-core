@@ -104,8 +104,135 @@ async def test_output_detection_is_optional_and_never_invents_pins():
         info = await inspect_device(http, device(), metadata=True)
     assert info["outputs"] == [] and len(info["segments"]) == 2
     assert parse_outputs([None, {"start": "0", "len": 1}, {"start": 0, "len": 0}]) == []
-    outputs = parse_outputs([{"start": 0, "len": 10, "pin": [0, 1, 255, -1, "2"], "type": 30}])
+    outputs = parse_outputs([{"start": 0, "len": 10, "pin": [0, 1, 255, -1, "2"], "type": 51}])
     assert len(outputs) == 1 and outputs[0]["pins"] == [0, 1]  # A two-pin SPI bus is one output.
+
+
+@pytest.mark.parametrize(
+    "kind, name, mode",
+    [
+        (20, "WS2812 CCT", "white"),
+        (22, "WS281x RGB", "color"),
+        (24, "WS2811 400 kHz", "color"),
+        (30, "SK6812 RGBW", "color_white"),
+        (41, "PWM white", "white"),
+        (42, "PWM CCT", "white"),
+        (43, "PWM RGB", "color"),
+        (45, "PWM RGB+CCT", "color_white"),
+        (51, "APA102", "color"),
+        (40, "On/off", "on_off"),
+        (127, "LED type 127", "unknown"),
+        (None, "LED output", "unknown"),
+    ],
+)
+def test_output_color_modes_follow_official_bus_types(kind, name, mode):
+    output = parse_outputs([{"start": 0, "len": 1, "pin": [16], "type": kind}])[0]
+    assert (output["type_name"], output["color_mode"]) == (name, mode)
+    network = parse_outputs([{"start": 0, "len": 30, "pin": [192, 168, 1, 20], "type": 80}])[0]
+    assert network["pins"] == []  # An IP address is not four GPIO outputs.
+
+
+async def test_segments_use_hardware_modes_before_virtual_color_controls():
+    state = capabilities()
+    # Auto-white exposes RGB controls even for a physical white output.
+    state["info"]["leds"] = {"seglc": [1, 1]}
+    outputs = [
+        {"start": 0, "len": 16, "type": 22},
+        {"start": 16, "len": 128, "type": 41},
+    ]
+
+    def handler(request):
+        if request.url.path == "/json/cfg":
+            return httpx.Response(200, json={"hw": {"led": {"ins": outputs}}})
+        return httpx.Response(200, json=state)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        worker = DeviceWorker(device(), http, EventBus(), lambda: {})
+        for refresh in (True, False):
+            info = await worker.probe(refresh=refresh)
+            assert [s["color_mode"] for s in info["segments"]] == ["color", "white"]
+
+
+@pytest.mark.parametrize(
+    "values, expected",
+    [
+        ([1, 6], ["color", "white"]),
+        ([3, 0], ["color_white", "on_off"]),
+        ([1], ["unknown", "unknown"]),
+        ([True, "2"], ["unknown", "unknown"]),
+    ],
+)
+async def test_segment_capabilities_follow_active_segment_order(values, expected):
+    state = capabilities()
+    state["state"]["seg"][1]["id"] = 5
+    state["info"]["leds"] = {"seglc": values}
+    async with httpx.AsyncClient() as http:
+        info = await inspect_device(http, device(), data=state)
+    assert [s["color_mode"] for s in info["segments"]] == expected
+
+
+@pytest.mark.parametrize("mode", ["segment", "pixels", "matrix"])
+def test_white_commands_use_neutral_rgb_and_white_without_changing_configuration(mode):
+    board = device(targets=[{"id": "white", "name": "White", "segment": 1, "mode": mode}])
+    before = board.model_dump()
+    info = {"segments": [{"id": 1, "color_mode": "white"}]}
+    appearance = Appearance(color="#208040", brightness=128)
+    command = payload(board, {"phase": "ready", "remaining": 20}, {"white": appearance}, info=info)
+    segment = command["seg"][0]
+    assert segment["id"] == 1
+    if mode == "segment":
+        assert segment["col"] == [[128, 128, 128, 128]]
+        assert segment["bri"] == 128
+    elif mode == "pixels":
+        assert segment["i"][-1] == "40404040"
+    else:
+        assert "40404040" in segment["i"]
+    assert board.model_dump() == before
+    assert payload(board, {"phase": "idle"}, {}, info=info)["seg"][0]["id"] == 1
+
+
+def test_on_off_output_uses_segment_power_for_black():
+    info = {"segments": [{"id": 0, "color_mode": "on_off"}]}
+    command = payload(
+        device(), {"phase": "ready"}, {"ring": Appearance(color="#000000")}, info=info
+    )
+    assert command["seg"][0]["on"] is False
+
+
+@pytest.mark.parametrize("output_length, expected", [(16, "white"), (8, "color")])
+async def test_partial_output_geometry_does_not_claim_white_segment(output_length, expected):
+    state = capabilities()
+    state["info"]["leds"] = {
+        "seglc": [1, 1],
+        "ins": [{"start": 0, "len": output_length, "type": 41}],
+    }
+    async with httpx.AsyncClient() as http:
+        info = await inspect_device(http, device(), data=state)
+    assert info["segments"][0]["color_mode"] == expected
+    assert info["segments"][1]["color_mode"] == "color"
+
+
+async def test_unsaved_white_preview_uses_hardware_metadata_and_restores(tmp_path):
+    state = preview_state()
+    state["info"]["leds"] = {"seglc": [1, 1]}
+    sent = []
+
+    def handler(request):
+        if request.method == "POST":
+            sent.append(json.loads(request.content))
+            return httpx.Response(200, json={"success": True})
+        if request.url.path == "/json/cfg":
+            return httpx.Response(
+                200, json={"hw": {"led": {"ins": [{"start": 0, "len": 16, "type": 41}]}}}
+            )
+        return httpx.Response(200, json=state)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        service = WLED(tmp_path / "wled.json", http, EventBus(), lambda: {})
+        await service.preview_draft(DraftPreview(device=device(), target_id="ring", duration=0.5))
+    assert sent[0]["seg"][0]["col"] == [[255, 255, 255, 255]]
+    assert sent[-1]["seg"][0]["col"] == [[4, 5, 6]]
+    assert not (tmp_path / "wled.json").exists()
 
 
 async def test_worker_keeps_output_metadata_between_probes_and_refreshes_on_request():
