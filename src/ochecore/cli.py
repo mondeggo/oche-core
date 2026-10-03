@@ -86,11 +86,15 @@ def parser() -> argparse.ArgumentParser:
     actions.add_parser("status", help="Show devices, errors and current game phase.")
     actions.add_parser("discover", help="Find reachable WLED controllers on the service's network.")
     profiles = actions.add_parser(
-        "profiles", help="List, copy, select or remove lighting profiles."
+        "profiles", help="List, create, select or remove lighting profiles."
     )
     profile_actions = profiles.add_subparsers(dest="profile_command")
     profile_actions.add_parser("list")
-    profile_actions.add_parser("create").add_argument("name")
+    create_profile = profile_actions.add_parser("create", help="Copy current rules or start blank.")
+    create_profile.add_argument("name")
+    create_profile.add_argument(
+        "--blank", action="store_true", help="Start with lights off and no event or player rules."
+    )
     profile_actions.add_parser("use").add_argument("profile")
     profile_actions.add_parser("delete").add_argument("profile")
     settings = actions.add_parser("config", help="Show configuration or load a JSON file.")
@@ -269,7 +273,14 @@ def execute_wled(args, client) -> None:
                 }
             )
         elif action == "create":
-            print_json(request(client, "POST", "/api/wled/profiles", {"name": args.name}))
+            print_json(
+                request(
+                    client,
+                    "POST",
+                    "/api/wled/profiles",
+                    {"name": args.name, "source": "blank" if args.blank else "current"},
+                )
+            )
         else:
             profile = next(
                 (p for p in config["profiles"] if args.profile in {p["id"], p["name"]}), None

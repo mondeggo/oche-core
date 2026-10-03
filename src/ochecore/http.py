@@ -99,7 +99,7 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
     async def wled_create_profile(profile: ProfileName, request: Request):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            return await runtime.wled.create_profile(profile.name)
+            return await runtime.wled.create_profile(profile.name, profile.source)
 
     @router.put("/api/wled/profile")
     async def wled_select_profile(profile: ProfileSelection, request: Request):

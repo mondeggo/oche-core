@@ -466,6 +466,97 @@ def test_profiles_keep_independent_colors_shared_hardware_and_persist(settings, 
         assert client.delete("/api/wled/profiles/default").status_code == 409
 
 
+@pytest.mark.parametrize("via_cli", [False, True])
+def test_blank_profiles_keep_hardware_and_start_without_rules(settings, capsys, via_cli):
+    settings.ui_enabled = False
+    configured = device(
+        enabled=False,
+        targets=[
+            {
+                "id": "ring",
+                "name": "Ring",
+                "enabled": False,
+                "players": {1: {"color": "#abcdef", "name_filter": "Alice"}},
+                "phases": {"ready": {"color": "#fedcba", "brightness": 77, "effect": 1}},
+            },
+            {
+                "id": "score",
+                "name": "Score",
+                "segment": 1,
+                "mode": "matrix",
+                "start": 3,
+                "matrix": {
+                    "width": 16,
+                    "height": 8,
+                    "rotation": 180,
+                    "serpentine": False,
+                    "source": "turn_score",
+                    "appearance": {"color": "#123456", "brightness": 78},
+                },
+            },
+        ],
+    )
+    with TestClient(create_app(settings)) as client:
+        initial = WLEDConfig(devices=[configured]).model_dump(mode="json")
+        assert client.put("/api/wled", json=initial).status_code == 200
+        original = client.get("/api/wled").json()["devices"]
+        if via_cli:
+            execute(parser().parse_args(["wled", "profiles", "create", "Fresh", "--blank"]), client)
+            profile_id = json.loads(capsys.readouterr().out)["active_profile"]
+        else:
+            response = client.post("/api/wled/profiles", json={"name": "Fresh", "source": "blank"})
+            assert response.status_code == 200
+            profile_id = response.json()["active_profile"]
+        blank = client.get("/api/wled").json()
+        assert blank["active_profile"] == profile_id and blank["enabled"] is False
+        assert blank["devices"][0]["enabled"] is False
+        for actual, before in zip(
+            blank["devices"][0]["targets"], original[0]["targets"], strict=True
+        ):
+            assert actual["effects"] == actual["players"] == {}
+            assert all(
+                style == {"color": "#ffffff", "brightness": 0, "effect": 0}
+                for style in actual["phases"].values()
+            )
+            assert actual["matrix"]["appearance"] == {
+                "color": "#ffffff",
+                "brightness": 0,
+                "effect": 0,
+            }
+            for key in ("id", "name", "enabled", "segment", "mode", "start", "count"):
+                assert actual[key] == before[key]
+            for key in ("width", "height", "rotation", "serpentine", "source"):
+                assert actual["matrix"][key] == before["matrix"][key]
+        assert (
+            client.post(
+                "/api/wled/profiles", json={"name": "Invalid", "source": "missing"}
+            ).status_code
+            == 422
+        )
+        blank["devices"][0]["targets"][0]["phases"]["ready"]["brightness"] = 42
+        assert client.patch("/api/wled", json={"devices": blank["devices"]}).status_code == 200
+        assert client.put("/api/wled/profile", json={"id": "default"}).status_code == 200
+        assert client.get("/api/wled").json()["devices"] == original
+        assert client.put("/api/wled/profile", json={"id": profile_id}).status_code == 200
+    with TestClient(create_app(settings)) as client:
+        restored = client.get("/api/wled").json()
+        assert restored["active_profile"] == profile_id
+        ring, matrix = restored["devices"][0]["targets"]
+        assert ring["phases"]["ready"]["brightness"] == 42
+        assert ring["effects"] == ring["players"] == {}
+        assert ring["phases"]["waiting"]["brightness"] == 0
+        assert matrix["matrix"]["appearance"]["brightness"] == 0
+
+
+def test_blank_profile_can_be_created_before_any_devices(settings):
+    with TestClient(create_app(settings)) as client:
+        response = client.post("/api/wled/profiles", json={"name": "Fresh", "source": "blank"})
+        assert response.status_code == 200
+        config = client.get("/api/wled").json()
+        assert config["devices"] == []
+        assert config["profiles"][1]["targets"] == {}
+
+
 def test_power_api_cli_and_failed_devices(settings, capsys):
     sent = []
 

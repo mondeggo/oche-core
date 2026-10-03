@@ -195,6 +195,7 @@ class LightingProfile(Model):
 
 class ProfileName(Model):
     name: str = Field(min_length=1, max_length=60)
+    source: Literal["current", "blank"] = "current"
 
 
 class ProfileSelection(Model):
@@ -945,7 +946,9 @@ class WLED:
                 target.matrix.appearance = style.matrix.model_copy(deep=True)
         config.active_profile = profile.id
 
-    async def create_profile(self, name: str) -> dict:
+    async def create_profile(
+        self, name: str, source: Literal["current", "blank"] = "current"
+    ) -> dict:
         config = self.config.model_copy(deep=True)
         if any(p.name.casefold() == name.casefold() for p in config.profiles):
             raise ConnectionProblem("A lighting profile with that name already exists.")
@@ -953,8 +956,23 @@ class WLED:
             raise ConnectionProblem("Keep at most 12 lighting profiles.")
         active = next(p for p in config.profiles if p.id == config.active_profile)
         profile = active.model_copy(update={"id": uuid4().hex[:12], "name": name}, deep=True)
+        if source == "blank":
+            profile.targets = {
+                device.id: {
+                    target.id: TargetStyle(
+                        phases=PhaseColours(
+                            **{phase: Appearance(brightness=0) for phase in Phase.__args__}
+                        ),
+                        effects={},
+                        players={},
+                        matrix=Appearance(brightness=0),
+                    )
+                    for target in device.targets
+                }
+                for device in config.devices
+            }
         config.profiles.append(profile)
-        config.active_profile = profile.id
+        self.apply_profile(config, profile)
         await self.configure(config)
         return {"active_profile": profile.id}
 
