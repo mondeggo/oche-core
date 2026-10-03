@@ -8,6 +8,7 @@
     <script src="/static/theme.js"></script>
     <link rel="stylesheet" href="/static/style.css" />
     <script src="/static/app.js" defer></script>
+    <script src="/static/select.js" defer></script>
     <script src="/static/wled.js" defer></script>
     <script src="/static/caller.js" defer></script>
   </head>
@@ -290,21 +291,32 @@
           <details class="wled-profile-tools">
             <summary>Manage profiles</summary>
             <label for="wled-profile-name">New profile name</label>
-            <div class="field-row">
+            <div class="wled-profile-actions">
               <input
                 id="wled-profile-name"
                 maxlength="60"
                 placeholder="Practice or match night"
               />
-              <button id="wled-profile-create" type="button" disabled>
-                Copy current profile
-              </button>
+              <div class="wled-profile-buttons">
+                <button id="wled-profile-blank" type="button" disabled>
+                  Create blank
+                </button>
+                <button id="wled-profile-create" type="button" disabled>
+                  Copy current
+                </button>
+                <button
+                  id="wled-profile-delete"
+                  type="button"
+                  aria-label="Remove current lighting profile"
+                  disabled
+                >
+                  Remove
+                </button>
+              </div>
             </div>
-            <button id="wled-profile-delete" type="button" disabled>
-              Remove profile
-            </button>
             <p class="hint">
-              Profiles share devices. Lighting rules belong to each profile.
+              Blank starts with lights off and no rules. Copy uses the current
+              profile. Both keep your devices and targets.
             </p>
           </details>
         </div>
@@ -517,6 +529,7 @@
               </button>
             </div>
             <div data-matrix data-editor-panel="display" role="tabpanel" hidden>
+              <p data-matrix-layout class="hint" hidden></p>
               <div class="wled-grid">
                 <label>
                   Display

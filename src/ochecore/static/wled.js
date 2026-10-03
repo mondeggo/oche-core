@@ -141,7 +141,7 @@
     $("wled-retry").hidden = !saveError;
     $("wled-reload").hidden = !changed;
     $("wled-profile").disabled = !configuration || changed;
-    $("wled-profile-create").disabled =
+    $("wled-profile-create").disabled = $("wled-profile-blank").disabled =
       !configuration || changed || configuration.profiles.length >= 12;
     $("wled-profile-delete").disabled =
       !configuration || changed || configuration.profiles.length <= 1;
@@ -518,13 +518,37 @@
   }
 
   const outputLabel = (output) =>
-    output.pins.length
-      ? `GPIO ${output.pins.join(" + ")}`
-      : `Output ${output.id + 1}`;
+    output.matrix
+      ? output.name
+      : output.pins.length
+        ? `GPIO ${output.pins.join(" + ")}`
+        : `Output ${output.id + 1}`;
+
+  function deviceOutputs(info) {
+    return [
+      ...(info?.outputs || []),
+      ...(info?.segments || [])
+        .filter((segment) => segment.matrix)
+        .map((segment) => ({
+          id: `matrix-${segment.id}`,
+          name: segment.name,
+          segment: segment.id,
+          matrix: segment.matrix,
+          color_mode: segment.color_mode,
+          pins: [],
+          length: segment.length,
+          type_name: `${segment.matrix.width} × ${segment.matrix.height} matrix`,
+        })),
+    ];
+  }
 
   function outputsForTarget(target, info) {
     const segment = info?.segments.find((item) => item.id === target.segment);
     if (!segment) return [];
+    if (segment.matrix)
+      return deviceOutputs(info).filter(
+        (output) => output.matrix && output.segment === segment.id,
+      );
     const start =
       segment.start + (target.mode === "segment" ? 0 : target.start);
     const stop =
@@ -543,7 +567,11 @@
     return (info?.segments || []).filter(
       (segment) =>
         !output ||
-        (segment.start >= output.start && segment.stop <= output.stop),
+        (output.matrix
+          ? segment.id === output.segment
+          : !segment.matrix &&
+            segment.start >= output.start &&
+            segment.stop <= output.stop),
     );
   }
 
@@ -557,7 +585,7 @@
         info,
       );
       return new Option(
-        `${segment.name} · ID ${segment.id}${outputs.length ? ` · ${outputs.map(outputLabel).join(" / ")}` : ""}`,
+        `${segment.name} · ID ${segment.id}${segment.matrix ? ` · ${segment.matrix.width} × ${segment.matrix.height} matrix` : outputs.length ? ` · ${outputs.map(outputLabel).join(" / ")}` : ""}`,
         segment.id,
       );
     });
@@ -573,7 +601,7 @@
     const current = device();
     if (!current) return;
     const info = deviceInfo();
-    const outputs = info?.outputs || [];
+    const outputs = deviceOutputs(info);
     let choice = selectedOutputs.get(current.id);
     if (
       choice !== "all" &&
@@ -661,6 +689,15 @@
       const segment = info?.segments?.find(
         (item) => item.id === Number(field(root, "segment").value),
       );
+      matrixField(root, "serpentine").closest("label").hidden =
+        !!segment?.matrix;
+      const geometryHint = root.querySelector("[data-matrix-layout]");
+      geometryHint.hidden = !segment?.matrix;
+      geometryHint.textContent =
+        segment?.pixel_control_error ||
+        (segment?.matrix
+          ? `WLED layout: ${segment.matrix.width} × ${segment.matrix.height}. Use these dimensions with first LED 0. Wiring is managed in WLED.`
+          : "");
       matrixField(root, "color").closest("label").hidden = [
         "white",
         "on_off",
@@ -681,7 +718,9 @@
       : "Lighting rules";
     $("wled-output-empty-text").textContent =
       selectedOutput && !segments.length
-        ? "This output needs its own segment in WLED. Create one there, then check the connection again."
+        ? info?.matrix
+          ? "For a 2D layout, choose a matrix card above. Physical GPIO outputs do not define its logical rows and columns."
+          : "This output needs its own segment in WLED. Create one there, then check the connection again."
         : `Add a target${selectedOutput ? ` on ${outputLabel(selectedOutput)}` : ""} to set up phase lighting and event effects.`;
   }
 
@@ -981,6 +1020,7 @@
       "wled-profile",
       "wled-profile-name",
       "wled-profile-create",
+      "wled-profile-blank",
       "wled-profile-delete",
     ])
       $(id).disabled = true;
@@ -1022,16 +1062,26 @@
       notice("Lighting profile applied.");
     });
   });
-  $("wled-profile-create").addEventListener("click", () => {
+  function createProfile(source) {
     const name = $("wled-profile-name").value.trim();
     if (!name) return $("wled-profile-name").focus();
     work(async () => {
-      await api("/api/wled/profiles", "POST", { name });
+      await api("/api/wled/profiles", "POST", { name, source });
       $("wled-profile-name").value = "";
       await load();
-      notice("Profile created from the current colours and effects.");
+      notice(
+        source === "blank"
+          ? "Blank profile created. Choose your lighting below."
+          : "Profile copied from the current colours and effects.",
+      );
     });
-  });
+  }
+  $("wled-profile-create").addEventListener("click", () =>
+    createProfile("current"),
+  );
+  $("wled-profile-blank").addEventListener("click", () =>
+    createProfile("blank"),
+  );
   $("wled-profile-delete").addEventListener("click", () =>
     work(async () => {
       await api(`/api/wled/profiles/${configuration.active_profile}`, "DELETE");
@@ -1094,7 +1144,7 @@
     collect();
     const current = device();
     const info = deviceInfo();
-    const output = info?.outputs?.find(
+    const output = deviceOutputs(info).find(
       (item) => String(item.id) === selectedOutputs.get(current.id),
     );
     const segments = outputSegments(output, info);
@@ -1115,6 +1165,20 @@
           80,
         );
       target.enabled = !!unused;
+      if (
+        segment.matrix &&
+        segment.matrix.width >= 11 &&
+        segment.matrix.height >= 5 &&
+        segment.matrix.width <= 64 &&
+        segment.matrix.height <= 64 &&
+        segment.length <= 512 &&
+        !segment.pixel_control_error
+      ) {
+        target.mode = "matrix";
+        target.matrix.width = segment.matrix.width;
+        target.matrix.height = segment.matrix.height;
+        target.matrix.serpentine = false;
+      }
       if (["white", "on_off"].includes(segment.color_mode)) {
         for (const style of Object.values(target.phases))
           style.color = "#ffffff";

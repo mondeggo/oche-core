@@ -247,7 +247,10 @@ control visible when metadata is unavailable.
 
 ### Lighting profiles
 
-Open **Manage profiles** and use **Copy current profile** to create a named profile, then adjust its colours and effects.
+Open **Manage profiles**, enter a name, then choose **Create blank** or **Copy current**.
+Blank profiles keep your devices and targets, with all phase/matrix brightness at zero and
+no event or player rules. Copying preserves the current lighting rules. Creation selects the
+new profile immediately. **Remove** deletes the selected profile; at least one must remain.
 Selecting a profile applies it immediately. Profiles share device addresses, target geometry,
 and automation switches; each stores phase appearances, event effects, player colours and matrix appearance.
 Existing installations start with a **Default** profile. Settings persist in `data/wled.json`.
@@ -276,6 +279,8 @@ player's one-based match position; a name filter matches a case-insensitive subs
 The first enabled matching slot wins. Player colours apply only to local players while ready.
 Matrix targets show **Score display** and **Events** instead. Tabs support arrow-key navigation.
 Disabled events keep their controls collapsed until enabled.
+Dropdowns offer search, scrollable full option names, arrow-key navigation and Enter to select.
+Escape or clicking outside closes the menu without changing the selection.
 
 The current phase is highlighted. Phase/player colours
 last while that state is active; event effects last for their configured duration (0.1–30 seconds).
@@ -311,6 +316,7 @@ uv run ochecore wled status
 uv run ochecore wled off board
 uv run ochecore wled on board
 uv run ochecore wled profiles create Quiet
+uv run ochecore wled profiles create Fresh --blank
 uv run ochecore wled profiles use Default
 uv run ochecore wled profiles
 uv run ochecore game
@@ -334,10 +340,18 @@ per target. Other pixels in that segment therefore share those settings. Untarge
 are left alone. Saved appearances belong to OcheCore; applying native whole-device WLED presets
 is not included in this version.
 
-The matrix renderer expects a linear segment with consecutive pixels in rows, up to 512 pixels
-per matrix and 1024 individually controlled pixels per controller. Test orientation with a
-sample score; WLED grouping, custom maps and 2D segment layouts require hardware verification.
-Unknown or oversized numbers show dashes. Player names and scrolling messages are planned.
+The matrix renderer supports linear segments wired in rows and native WLED 2D segments.
+Native 2D segments appear as matrix cards with their dimensions, separate from physical GPIOs.
+For a supported matrix size, **Add target** selects score mode and fills in its dimensions.
+Native 2D targets must use First LED 0 and match the selected rectangle's width and height;
+WLED manages physical wiring, so the OcheCore serpentine option is hidden. Grouping must be 1,
+spacing and offset 0, with segment reverse/mirror/transpose disabled for pixel control.
+These restrictions do not prevent using native WLED effects on whole segments.
+
+Limits are 512 pixels per matrix and 1024 individually controlled pixels per controller;
+each dimension is 5–64 and the displayed width must be at least 11. Scores use 3×5 digits.
+Unknown or oversized numbers show dashes. Test orientation with a sample score. Physical
+matrix acceptance is still pending. Player names, images and scrolling text are not implemented.
 
 Each controller has its own bounded event queue and timeout. Offline controllers retry without
 blocking AutoDarts or other lights; old effects are discarded. Disabling a controller or removing
@@ -361,7 +375,7 @@ runs at a time; regular lighting and AutoDarts processing continue.
 
 Controllers need mDNS enabled and must be reachable from OcheCore's network. Multicast discovery
 may not cross VLANs, guest Wi-Fi or Docker bridge networks. If no devices appear, use **Add
-device** with the controller's IP address. The browser's network is not used for discovery.
+manually** with the controller's IP address. The browser's network is not used for discovery.
 The protocol follows [WLED's mDNS advertisement](https://github.com/wled/WLED/blob/main/wled00/wled.cpp)
 and uses the Python `zeroconf` library. Discovery currently covers IPv4 advertisements;
 subnet address sweeps and automatic device registration are not included.
@@ -407,7 +421,7 @@ save. Old YAML/environment options for that adapter are also ignored. See the
 | `POST /api/wled/preview` | Temporary unsaved test: `device`, `target_id`, optional `phase`, `event`, `player`, `value`, `duration`; responds after restoration |
 | `POST /api/wled/{device_id}/power` | Set master power with `{"on":false}` or `{"on":true}`; keeps saved rules |
 | `POST /api/wled/power` | Set master power on all saved devices; same body, per-device results |
-| `POST /api/wled/profiles` | Copy the current lighting profile; body `{"name":"Quiet"}` |
+| `POST /api/wled/profiles` | Create and select a profile; body `{"name":"Quiet","source":"current"}` or `source: "blank"`; omitted source copies current |
 | `PUT /api/wled/profile` | Select a profile; body `{"id":"default"}` |
 | `DELETE /api/wled/profiles/{profile_id}` | Remove a profile; the last profile is retained |
 | `POST /api/wled/{device_id}/test` | Timed preview: `target_id`, optional `phase`, `event`, `player`, `value`, `duration` |

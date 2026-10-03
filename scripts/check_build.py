@@ -33,7 +33,14 @@ for ui_enabled in (True, False):
         with TestClient(app) as client:
             assert client.get("/healthz").json() == {"status": "ok", "version": __version__}
             assert client.get("/api/status").status_code == 200
-            for path in ("/", "/static/app.js", "/static/style.css", "/static/caller.js"):
+            for path in (
+                "/",
+                "/static/app.js",
+                "/static/select.js",
+                "/static/wled.js",
+                "/static/style.css",
+                "/static/caller.js",
+            ):
                 assert client.get(path).status_code == (200 if ui_enabled else 404), path
 
 print("Installed CLI, voice catalogue, API and optional UI passed.")

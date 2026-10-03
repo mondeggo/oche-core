@@ -2,6 +2,26 @@
 
 Updated October 3, 2026. Terminal controls and the optional UI share the same headless service.
 
+## Blank profiles, dropdowns and native matrices
+
+All **250 Python tests** and Ruff checks pass. API/CLI tests verify blank versus copied profiles,
+unchanged shared hardware settings, independent rules, restart persistence and invalid sources.
+Native 2D tests cover WLED's separate X/Y bounds, actual pixel count, logical row-major pixel
+commands, stacked rectangles, 1D strip tails, dimension checks, unsupported transforms and
+preview restoration. Linear matrix rotation and serpentine rendering remain covered.
+Mapping was checked against WLED 0.15.1's JSON and 2D renderer source; no physical matrix was tested.
+
+Temporary DOM tests verify all 200 dropdown choices remain accessible, full text, search,
+no-results feedback, disabled options, keyboard selection, cancellation and unchanged selections.
+Profile/matrix editor tests cover blank creation, native matrix cards, automatic dimensions,
+score tab selection and hiding serpentine settings when WLED manages wiring. Browser checks
+use an isolated controller fixture, including long effect names and blank-profile creation.
+No fixture sends commands to hardware or changes the user's saved profiles.
+The profile buttons remain on one row at desktop and 390-pixel widths. Long-option menus
+stay inside the viewport in both themes. The Python distributions and installed-package
+smoke test pass, including the shared menu asset. The native server is healthy on
+`0.0.0.0:9180`; Docker rebuilding is still blocked by the unavailable Desktop Linux engine.
+
 ## WLED editor and output capabilities
 
 All **223 Python tests** and Ruff checks pass after the capability and calibration changes.
