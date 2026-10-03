@@ -324,7 +324,7 @@ def payload(
 ) -> dict:
     """Compose once per segment so independent pixel targets share one frozen frame."""
     segments: dict[int, dict] = {}
-    modes = {s["id"]: s.get("color_mode") for s in (info or {}).get("segments", [])}
+    metadata = {s["id"]: s for s in (info or {}).get("segments", [])}
     for target in device.targets:
         if not target.enabled:
             continue
@@ -333,7 +333,8 @@ def payload(
             overlay or player_appearance(target, view) or getattr(target.phases, view["phase"])
         )
         segment = segments.setdefault(target.segment, {"id": target.segment, "on": True})
-        white = modes.get(target.segment) == "white"
+        details = metadata.get(target.segment, {})
+        white = details.get("color_mode") == "white"
         if target.mode == "segment":
             segment.update(
                 frz=False,
@@ -341,20 +342,26 @@ def payload(
                 bri=appearance.brightness,
                 col=[list(bytes.fromhex(rgb(appearance, white=white)))],
             )
-            if modes.get(target.segment) == "on_off":
+            if details.get("color_mode") == "on_off":
                 segment["on"] = appearance.brightness > 0 and appearance.color != "#000000"
         else:
             segment.update(bri=255)
             indices = segment.setdefault("i", [])
             if target.mode == "matrix":
                 appearance = overlay or target.matrix.appearance
+                # Native WLED 2D indices are row-major; WLED applies panel wiring.
+                matrix = (
+                    target.matrix.model_copy(update={"serpentine": False})
+                    if details.get("matrix")
+                    else target.matrix
+                )
                 value = (
                     preview.value
                     if preview and preview.target_id == target.id
                     else view.get(target.matrix.source)
                 )
                 indices.extend(
-                    [target.start, *matrix_pixels(target.matrix, value, appearance, white=white)]
+                    [target.start, *matrix_pixels(matrix, value, appearance, white=white)]
                 )
             else:
                 indices.extend(
@@ -437,6 +444,13 @@ async def inspect_device(
     data = await request(http, device, "/json") if data is None else data
     try:
         info, state = data["info"], data["state"]
+        led_info = info.get("leds")
+        canvas = led_info.get("matrix") if isinstance(led_info, dict) else None
+        if canvas is not None and (
+            not isinstance(canvas, dict)
+            or any(type(canvas.get(key)) is not int or canvas[key] <= 0 for key in ("w", "h"))
+        ):
+            raise ValueError
         segments = [
             {
                 "id": s["id"],
@@ -456,6 +470,37 @@ async def inspect_device(
                 for key in ("id", "start", "stop", "length")
             ):
                 raise ValueError
+            if canvas and segment["start"] < canvas["w"] * canvas["h"]:
+                source = next(s for s in state["seg"] if s["id"] == segment["id"])
+                start_y, stop_y = source["startY"], source["stopY"]
+                if (
+                    type(start_y) is not int
+                    or type(stop_y) is not int
+                    or not 0 <= start_y < stop_y <= canvas["h"]
+                    or segment["stop"] > canvas["w"]
+                ):
+                    raise ValueError
+                matrix = {
+                    "width": segment["stop"] - segment["start"],
+                    "height": stop_y - start_y,
+                    "start_y": start_y,
+                    "stop_y": stop_y,
+                }
+                segment["matrix"] = matrix
+                # WLED 0.15 serializes len as X width, even for a 2D segment.
+                segment["length"] = matrix["width"] * matrix["height"]
+                transformed = (
+                    source.get("grp", 1) != 1
+                    or source.get("spc", 0) != 0
+                    or source.get("of", 0) != 0
+                    or any(source.get(key, False) for key in ("rev", "mi", "rY", "mY", "tp"))
+                )
+                segment["pixel_control_error"] = (
+                    "In WLED, set segment grouping to 1, spacing and offset to 0, "
+                    "and disable reverse, mirror and transpose before using pixels or scores."
+                    if transformed
+                    else None
+                )
         effects = data.get("effects", ["Solid"])
         if not isinstance(effects, list) or not all(isinstance(item, str) for item in effects):
             raise ValueError
@@ -467,6 +512,8 @@ async def inspect_device(
             "segments": segments,
             "effects": effects,
         }
+        if canvas:
+            result["matrix"] = {"width": canvas["w"], "height": canvas["h"]}
     except (KeyError, TypeError, ValueError) as exc:
         raise ConnectionProblem("The device did not return valid WLED capabilities.") from exc
     if metadata:
@@ -585,7 +632,9 @@ def set_segment_modes(info: dict) -> None:
                 mode = "white" if value & 6 else "on_off"
         covered = segment["start"]
         modes = set()
-        for output in sorted(info.get("outputs", []), key=lambda item: item["start"]):
+        # Native 2D bounds are logical coordinates, not physical bus offsets.
+        outputs = [] if segment.get("matrix") else info.get("outputs", [])
+        for output in sorted(outputs, key=lambda item: item["start"]):
             if output["stop"] <= segment["start"] or output["start"] >= segment["stop"]:
                 continue
             if output["start"] > covered:
@@ -690,6 +739,22 @@ def validate_capabilities(device: Device, info: dict) -> None:
         segment = segments.get(target.segment)
         if segment is None:
             raise ConnectionProblem(f"{target.name}: segment {target.segment} does not exist.")
+        if target.mode != "segment" and segment.get("pixel_control_error"):
+            raise ConnectionProblem(f"{target.name}: {segment['pixel_control_error']}")
+        matrix = segment.get("matrix")
+        if (
+            target.mode == "matrix"
+            and matrix
+            and (
+                target.start != 0
+                or target.matrix.width != matrix["width"]
+                or target.matrix.height != matrix["height"]
+            )
+        ):
+            raise ConnectionProblem(
+                f"{target.name}: use First LED 0 and matrix dimensions "
+                f"{matrix['width']} × {matrix['height']} to fill this WLED 2D segment."
+            )
         if target.mode != "segment" and target.stop > segment["length"]:
             raise ConnectionProblem(f"{target.name}: pixels exceed the segment length.")
         appearances = [getattr(target.phases, phase) for phase in Phase.__args__]
@@ -702,9 +767,15 @@ def validate_capabilities(device: Device, info: dict) -> None:
                     f"{target.name}: native effect is unavailable on this device."
                 )
         for other in selected:
-            if other["id"] != segment["id"] and max(other["start"], segment["start"]) < min(
-                other["stop"], segment["stop"]
-            ):
+            overlap = max(other["start"], segment["start"]) < min(other["stop"], segment["stop"])
+            other_matrix = other.get("matrix")
+            if matrix and other_matrix:
+                overlap &= max(matrix["start_y"], other_matrix["start_y"]) < min(
+                    matrix["stop_y"], other_matrix["stop_y"]
+                )
+            elif bool(matrix) != bool(other_matrix):
+                overlap = False  # Linear segments start after the native matrix canvas.
+            if other["id"] != segment["id"] and overlap:
                 raise ConnectionProblem("Selected WLED segments overlap. Use separate segments.")
         selected.append(segment)
 

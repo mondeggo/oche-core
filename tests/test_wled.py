@@ -798,6 +798,163 @@ def test_matrix_rotation_wiring_and_unknown_scores(rotation):
     assert matrix_pixels(matrix, 0, color) != matrix_pixels(matrix, None, color)
 
 
+def native_matrix_state():
+    # WLED 0.15.1 reports len as X width, not the number of matrix pixels.
+    return {
+        "info": {"ver": "0.15.1", "leds": {"matrix": {"w": 16, "h": 16}, "seglc": [1, 1, 2]}},
+        "state": {
+            "seg": [
+                {"id": 0, "start": 0, "stop": 16, "startY": 0, "stopY": 8, "len": 16},
+                {"id": 1, "start": 0, "stop": 16, "startY": 8, "stopY": 16, "len": 16},
+                {"id": 2, "start": 256, "stop": 272, "startY": 0, "stopY": 1, "len": 16},
+            ]
+        },
+        "effects": ["Solid"],
+    }
+
+
+async def test_native_matrix_geometry_and_separate_rows_accept_scores():
+    state = native_matrix_state()
+    state["info"]["leds"]["ins"] = [
+        {"start": 0, "len": 16, "type": 41, "pin": [16]},
+        {"start": 256, "len": 16, "type": 41, "pin": [2]},
+    ]
+    board = device(
+        targets=[
+            {"id": "top", "name": "Top score", "mode": "matrix", "segment": 0},
+            {"id": "bottom", "name": "Bottom score", "mode": "matrix", "segment": 1},
+            {"id": "strip", "name": "Strip", "segment": 2},
+        ]
+    )
+    async with httpx.AsyncClient() as http:
+        info = await inspect_device(http, board, data=state)
+    assert info["matrix"] == {"width": 16, "height": 16}
+    assert [segment["length"] for segment in info["segments"]] == [128, 128, 16]
+    assert info["segments"][1]["matrix"] == {"width": 16, "height": 8, "start_y": 8, "stop_y": 16}
+    assert "matrix" not in info["segments"][2]
+    # Logical matrix columns must not be mistaken for the white bus on GPIO 16.
+    assert [segment["color_mode"] for segment in info["segments"]] == ["color", "color", "white"]
+    validate_capabilities(board, info)
+    info["segments"][1]["matrix"]["start_y"] = 7
+    with pytest.raises(ConnectionProblem, match="overlap"):
+        validate_capabilities(board, info)
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+async def test_native_matrix_uses_logical_rows_and_keeps_segment_geometry(rotation):
+    state = native_matrix_state()
+    state["state"]["seg"][0]["stopY"] = 16
+    board = device(
+        targets=[
+            {
+                "id": "score",
+                "name": "Score",
+                "mode": "matrix",
+                "matrix": {"width": 16, "height": 16, "rotation": rotation, "serpentine": True},
+            }
+        ]
+    )
+    async with httpx.AsyncClient() as http:
+        info = await inspect_device(http, board, data=state)
+    validate_capabilities(board, info)
+    before = board.model_dump()
+    command = payload(board, {"phase": "ready", "remaining": 180}, {}, info=info)["seg"][0]
+    matrix = board.targets[0].matrix
+    logical = matrix_pixels(matrix.model_copy(update={"serpentine": False}), 180, matrix.appearance)
+    assert command["i"] == [0, *logical]
+    assert set(command) == {"id", "on", "bri", "i"}
+    assert board.model_dump() == before
+    # A matrix connected as a linear strip still needs OcheCore's serpentine mapping.
+    linear = payload(board, {"phase": "ready", "remaining": 180}, {})["seg"][0]
+    assert linear["i"] != command["i"]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("grp", 2),
+        ("spc", 1),
+        ("of", 1),
+        ("mi", True),
+        ("mY", True),
+        ("rev", True),
+        ("rY", True),
+        ("tp", True),
+    ],
+)
+async def test_native_matrix_pixel_transforms_are_rejected_without_changing_wled(field, value):
+    state = native_matrix_state()
+    state["state"]["seg"][0][field] = value
+    board = device(targets=[{"id": "score", "name": "Score", "mode": "matrix"}])
+    async with httpx.AsyncClient() as http:
+        info = await inspect_device(http, board, data=state)
+    with pytest.raises(ConnectionProblem, match="In WLED, set segment grouping"):
+        validate_capabilities(board, info)
+    validate_capabilities(device(), info)  # Whole-segment native effects keep their settings.
+
+
+@pytest.mark.parametrize("width,height,start", [(11, 8, 0), (16, 5, 0), (16, 8, 1)])
+async def test_native_matrix_scores_require_full_segment_geometry(width, height, start):
+    board = device(
+        targets=[
+            {
+                "id": "score",
+                "name": "Score",
+                "mode": "matrix",
+                "start": start,
+                "matrix": {"width": width, "height": height},
+            }
+        ]
+    )
+    async with httpx.AsyncClient() as http:
+        info = await inspect_device(http, board, data=native_matrix_state())
+    with pytest.raises(ConnectionProblem, match="First LED 0 and matrix dimensions 16 × 8"):
+        validate_capabilities(board, info)
+
+
+@pytest.mark.parametrize("bounds", [{"startY": -1}, {"stopY": 17}, {"stopY": None}])
+async def test_native_matrix_rejects_invalid_row_bounds(bounds):
+    state = native_matrix_state()
+    state["state"]["seg"][0].update(bounds)
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(ConnectionProblem, match="valid WLED capabilities"):
+            await inspect_device(http, device(), data=state)
+
+
+async def test_native_matrix_preview_checks_dimensions_and_restores_existing_effect(tmp_path):
+    state = native_matrix_state()
+    state["state"].update(on=True, bri=128)
+    state["state"]["seg"][0].update(on=True, bri=72, fx=0, col=[[1, 2, 3]], frz=False)
+    sent = []
+
+    def handler(request):
+        if request.method == "POST":
+            sent.append(json.loads(request.content))
+            return httpx.Response(200, json={"success": True})
+        return httpx.Response(200, json=state)
+
+    board = device(targets=[{"id": "score", "name": "Score", "mode": "matrix"}])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        service = WLED(tmp_path / "wled.json", http, EventBus(), lambda: {})
+        result = await service.preview_draft(
+            DraftPreview(device=board, target_id="score", value=180, duration=0.5)
+        )
+    assert result["restored"]
+    assert len(sent[0]["seg"][0]["i"]) == 129
+    assert sent[-1]["seg"][0]["col"] == [[1, 2, 3]]
+    assert sent[-1]["seg"][0]["bri"] == 72
+    assert all(not {"start", "stop", "startY", "stopY"} & body["seg"][0].keys() for body in sent)
+
+
+@pytest.mark.parametrize("canvas", [{"w": True, "h": 16}, {"w": 16, "h": 0}, [], {}])
+async def test_invalid_native_matrix_metadata_is_rejected(canvas):
+    state = native_matrix_state()
+    state["info"]["leds"]["matrix"] = canvas
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(ConnectionProblem, match="valid WLED capabilities"):
+            await inspect_device(http, device(), data=state)
+
+
 async def test_capabilities_bounds_reserved_effects_and_malformed_device():
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(lambda _: httpx.Response(200, json=capabilities()))
