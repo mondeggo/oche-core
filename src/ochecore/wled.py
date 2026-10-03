@@ -454,7 +454,65 @@ async def inspect_device(
         except ConnectionProblem:
             definitions = []  # Older firmware can still be probed and used.
         result["effect_colors"] = [effect_colors(value) for value in definitions]
+    leds = info.get("leds")
+    result["outputs"] = parse_outputs(leds.get("ins") if isinstance(leds, dict) else None)
+    if metadata:
+        for path in ("/json/cfg", "/cfg.json"):
+            try:
+                configuration = await request(http, device, path)
+                outputs = parse_outputs(configuration.get("hw", {}).get("led", {}).get("ins"))
+            except (ConnectionProblem, AttributeError):
+                continue
+            if outputs:
+                result["outputs"] = outputs
+                break
     return result
+
+
+def parse_outputs(entries: object) -> list[dict]:
+    """Expose LED output geometry and pins without retaining other device settings."""
+    names = {
+        20: "WS2811",
+        21: "TM1829",
+        22: "WS281x RGB",
+        24: "SK6812 RGBW",
+        25: "TM1814",
+        29: "WS2801",
+        30: "APA102",
+        31: "LPD8806",
+        40: "On/off",
+        41: "PWM white",
+        42: "PWM CCT",
+        43: "PWM RGB",
+        44: "PWM RGBW",
+        45: "PWM RGB+CCT",
+    }
+    outputs = []
+    for index, entry in enumerate(entries[:32] if isinstance(entries, list) else []):
+        if not isinstance(entry, dict):
+            continue
+        start, length, kind = (entry.get(key) for key in ("start", "len", "type"))
+        if type(start) is not int or type(length) is not int or start < 0 or length <= 0:
+            continue
+        pins = entry.get("pin", [])
+        pins = [pins] if type(pins) is int else pins
+        pins = (
+            [p for p in pins if type(p) is int and 0 <= p < 255] if isinstance(pins, list) else []
+        )
+        outputs.append(
+            {
+                "id": index,
+                "pins": pins,
+                "start": start,
+                "stop": start + length,
+                "length": length,
+                "type": kind if type(kind) is int else None,
+                "type_name": names.get(kind, f"LED type {kind}")
+                if type(kind) is int
+                else "LED output",
+            }
+        )
+    return outputs
 
 
 def effect_colors(metadata: object) -> list[str | None]:
@@ -581,8 +639,15 @@ class DeviceWorker:
         self.preview: tuple[float, Preview] | None = None
         self.last_payload: dict | None = None
 
-    async def probe(self) -> dict:
-        self.info = await inspect_device(self.http, self.device)
+    async def probe(self, *, refresh: bool = False) -> dict:
+        previous = self.info
+        self.info = await inspect_device(
+            self.http, self.device, metadata=refresh or previous is None
+        )
+        if previous and not refresh:
+            for key in ("outputs", "effect_colors"):
+                if not self.info.get(key) and key in previous:
+                    self.info[key] = previous[key]
         validate_capabilities(self.device, self.info)
         return self.info
 
@@ -840,7 +905,7 @@ class WLED:
         worker = self.worker(device_id)
         async with worker.lock:
             try:
-                result = await worker.probe()
+                result = await worker.probe(refresh=True)
                 worker.connected, worker.error = True, None
                 return result
             except ConnectionProblem as exc:
@@ -848,7 +913,13 @@ class WLED:
                 raise
 
     async def probe_address(self, address: DeviceAddress) -> dict:
-        return await inspect_device(self.http, address, metadata=True)
+        info = await inspect_device(self.http, address, metadata=True)
+        for worker in self.workers.values():
+            if worker.device.url.lower() == address.url.lower():
+                async with worker.lock:
+                    worker.info = info
+                    worker.connected, worker.error = True, None
+        return info
 
     async def power(self, on: bool, device_id: str | None = None) -> dict:
         workers = [self.worker(device_id)] if device_id else list(self.workers.values())

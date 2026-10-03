@@ -215,6 +215,18 @@ You can also use **Add device** to enter an HTTP address manually. **Check conne
 the address currently in the form, including an unsaved address, and loads segments and effects.
 Valid edits save after a short pause; incomplete fields or failed saves keep the draft visible.
 The save indicator offers retry after errors. Add a target and choose its segment and mode.
+**LED outputs** groups targets by the controller's GPIO pins, LED type and length. Select an
+output to edit its targets, or **All targets** to see the whole controller. Selection changes
+only the view. **Add target on GPIO …** uses an available segment on that output; an already
+used segment starts with the new target disabled to avoid overlapping rules.
+
+Output detection reads WLED's LED hardware configuration, following AutoGlow 2's approach.
+The segment selector shows the corresponding GPIO labels. **Check connection** refreshes
+this information. Older or locked firmware can still use segments without pin information.
+An output needs its own WLED segment for independent native effects; OcheCore does not change
+GPIO assignments or split segments automatically. The probe API/CLI includes an `outputs`
+list with pins, type and pixel range for headless setup.
+
 **Preview** beside a phase or game effect uses the current form for three seconds. Matrix
 settings have a score preview. Previews also work without a match or enabled automation.
 

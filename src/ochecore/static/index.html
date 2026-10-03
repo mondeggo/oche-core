@@ -371,15 +371,25 @@
               </button>
             </div>
             <p id="wled-capabilities" class="hint"></p>
+            <div id="wled-outputs-section" hidden>
+              <h2>LED outputs</h2>
+              <div
+                id="wled-outputs"
+                class="wled-outputs"
+                role="group"
+                aria-label="LED outputs"
+              ></div>
+            </div>
             <div class="panel-heading wled-target-heading">
               <h2>Lighting targets</h2>
               <button id="wled-add-target" type="button">Add target</button>
             </div>
             <p class="hint">
-              Choose segments already configured in WLED. Pixel indices start at
-              zero within a segment. Pixel control freezes that segment’s native
-              effect.
+              Each output has its own targets and rules. Choose segments already
+              configured in WLED. Pixel indices start at zero within a segment.
+              Pixel control freezes that segment’s native effect.
             </p>
+            <p id="wled-output-empty" class="hint" role="status" hidden></p>
             <div id="wled-targets"></div>
           </div>
           <div class="actions">
@@ -409,20 +419,15 @@
                 </select>
               </label>
               <label>
-                Segment ID
-                <input
-                  data-field="segment"
-                  type="number"
-                  min="0"
-                  max="255"
-                  required
-                />
+                WLED segment
+                <select data-field="segment" required></select>
               </label>
               <label class="check-label">
                 <input data-field="enabled" type="checkbox" />
                 Enable target
               </label>
             </div>
+            <p data-output-note class="hint"></p>
             <div data-pixels class="wled-grid" hidden>
               <label>
                 First LED

@@ -726,6 +726,32 @@ input[type="color"] {
 .wled-target-heading {
   margin-top: 32px;
 }
+.wled-outputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.wled-outputs button {
+  flex: 1 1 180px;
+  display: grid;
+  gap: 5px;
+  text-align: left;
+  padding: 12px 14px;
+}
+.wled-outputs button span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.wled-outputs button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--selected);
+  color: var(--selected-text);
+}
+#wled-outputs-section {
+  margin-top: 24px;
+}
 .wled-target {
   margin-top: 22px;
   padding: 20px;

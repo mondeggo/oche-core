@@ -1,6 +1,20 @@
 # Connection, events and integration validation
 
-Updated October 2, 2026. Terminal controls and the optional UI share the same headless service.
+Updated October 3, 2026. Terminal controls and the optional UI share the same headless service.
+
+## WLED hardware outputs
+
+Read-only inspection of the user's WLED 0.15.1 controller confirmed two WS281x outputs:
+60 LEDs on GPIO 16 and 30 LEDs on GPIO 2, mapped to separate segments. Automated tests cover
+configuration endpoint fallback, missing/locked hardware information, multi-pin buses,
+metadata caching, and commands scoped to the selected segment. DOM checks cover selecting
+an output without saving, adding a target on the second output, preserving the first output's
+colours, and switching between outputs. Hardware configuration is not modified.
+
+All 196 Python tests, Ruff checks, DOM checks and an isolated wheel smoke test pass. The native
+server and browser show both live GPIO outputs; a successful probe updates connection status
+even with no lighting targets. The October 3 Docker rebuild could not run because the Docker
+Desktop Linux engine was unavailable, including after attempting to start Docker Desktop.
 
 ## WLED event matrix and live capture
 

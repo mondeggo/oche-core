@@ -32,6 +32,7 @@ from ochecore.wled import (
     effect_colors,
     inspect_device,
     matrix_pixels,
+    parse_outputs,
     payload,
     request,
     validate_capabilities,
@@ -50,6 +51,89 @@ from ochecore.wled import (
 )
 def test_effect_color_controls_follow_device_metadata(metadata, expected):
     assert effect_colors(metadata) == expected
+
+
+def controller_outputs():
+    return [
+        {"start": 0, "len": 60, "pin": [16], "type": 22},
+        {"start": 60, "len": 30, "pin": [2], "type": 22},
+    ]
+
+
+@pytest.mark.parametrize("config_path", ["/json/cfg", "/cfg.json"])
+async def test_probe_detects_two_gpio_outputs_with_configuration_fallback(config_path):
+    requested = []
+
+    def handler(request):
+        requested.append(request)
+        if request.url.path == "/json":
+            return httpx.Response(200, json=capabilities())
+        if request.url.path == "/json/fxdata":
+            return httpx.Response(200, json=["!;!;;"])
+        if request.url.path == config_path:
+            return httpx.Response(
+                200,
+                json={
+                    "hw": {"led": {"ins": controller_outputs()}},
+                    "wifi": {"password": "not-for-the-public-api"},
+                },
+            )
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        info = await inspect_device(http, device(), metadata=True)
+    assert [(o["pins"], o["start"], o["stop"]) for o in info["outputs"]] == [
+        ([16], 0, 60),
+        ([2], 60, 90),
+    ]
+    assert all(o["type_name"] == "WS281x RGB" for o in info["outputs"])
+    assert all(r.method == "GET" for r in requested)
+    assert "not-for-the-public-api" not in json.dumps(info)
+
+
+async def test_output_detection_is_optional_and_never_invents_pins():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda r: (
+                httpx.Response(200, json=capabilities())
+                if r.url.path == "/json"
+                else httpx.Response(403)
+            )
+        )
+    ) as http:
+        info = await inspect_device(http, device(), metadata=True)
+    assert info["outputs"] == [] and len(info["segments"]) == 2
+    assert parse_outputs([None, {"start": "0", "len": 1}, {"start": 0, "len": 0}]) == []
+    outputs = parse_outputs([{"start": 0, "len": 10, "pin": [0, 1, 255, -1, "2"], "type": 30}])
+    assert len(outputs) == 1 and outputs[0]["pins"] == [0, 1]  # A two-pin SPI bus is one output.
+
+
+async def test_worker_keeps_output_metadata_between_probes_and_refreshes_on_request():
+    paths = []
+
+    def handler(request):
+        paths.append(request.url.path)
+        return (
+            httpx.Response(200, json={"hw": {"led": {"ins": controller_outputs()}}})
+            if request.url.path == "/json/cfg"
+            else httpx.Response(200, json=capabilities())
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        worker = DeviceWorker(device(), http, EventBus(), lambda: {})
+        await worker.probe()
+        paths.clear()
+        assert len((await worker.probe())["outputs"]) == 2
+        assert paths == ["/json"]
+        await worker.probe(refresh=True)
+        assert "/json/cfg" in paths
+
+
+def test_second_output_commands_only_address_its_segment():
+    configured = device(targets=[{"id": "strip2", "name": "GPIO 2", "segment": 1}])
+    command = payload(configured, {"phase": "ready"}, {})
+    assert len(command["seg"]) == 1 and command["seg"][0]["id"] == 1
+    assert "start" not in command["seg"][0] and "stop" not in command["seg"][0]
 
 
 def test_unsaved_probe_and_cli_keep_configuration_unchanged(settings, capsys):
@@ -74,6 +158,13 @@ def test_unsaved_probe_and_cli_keep_configuration_unchanged(settings, capsys):
         execute(args, client)
         assert json.loads(capsys.readouterr().out)["version"] == "0.15.3"
         assert client.post("/api/wled/probe", json={"url": "file:///tmp"}).status_code == 422
+        # Saved devices with no active targets still report a successful connection check.
+        config = WLEDConfig(devices=[device(url="http://draft.test", targets=[])]).model_dump(
+            mode="json"
+        )
+        client.put("/api/wled", json=config)
+        assert client.post("/api/wled/probe", json={"url": "http://draft.test"}).status_code == 200
+        assert client.get("/api/wled/status").json()["devices"][0]["connected"] is True
 
 
 def preview_state():

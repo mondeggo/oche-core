@@ -13,6 +13,8 @@
   let saving = null;
   let editRevision = 0;
   const capabilities = new Map();
+  const selectedOutputs = new Map();
+  let outputSignature = "";
   const phases = {
     ready: "Ready to throw",
     takeout: "Remove darts",
@@ -432,6 +434,153 @@
     root.querySelectorAll("[data-rule]").forEach(updateAppearance);
   }
 
+  const outputLabel = (output) =>
+    output.pins.length
+      ? `GPIO ${output.pins.join(" + ")}`
+      : `Output ${output.id + 1}`;
+
+  function outputsForTarget(target, info) {
+    const segment = info?.segments.find((item) => item.id === target.segment);
+    if (!segment) return [];
+    const start =
+      segment.start + (target.mode === "segment" ? 0 : target.start);
+    const stop =
+      target.mode === "segment"
+        ? segment.stop
+        : start +
+          (target.mode === "matrix"
+            ? target.matrix.width * target.matrix.height
+            : target.count);
+    return (info.outputs || []).filter(
+      (output) => Math.max(start, output.start) < Math.min(stop, output.stop),
+    );
+  }
+
+  function outputSegments(output, info) {
+    return (info?.segments || []).filter(
+      (segment) =>
+        !output ||
+        (segment.start >= output.start && segment.stop <= output.stop),
+    );
+  }
+
+  function segmentOptions(root, target, info) {
+    const select = field(root, "segment");
+    // Capability refreshes must preserve an edited or temporarily unavailable segment.
+    const value = Number(select.value || target.segment);
+    const options = (info?.segments || []).map((segment) => {
+      const outputs = outputsForTarget(
+        { ...target, segment: segment.id, mode: "segment" },
+        info,
+      );
+      return new Option(
+        `${segment.name} · ID ${segment.id}${outputs.length ? ` · ${outputs.map(outputLabel).join(" / ")}` : ""}`,
+        segment.id,
+      );
+    });
+    if (!options.some((item) => Number(item.value) === value))
+      options.push(
+        new Option(`Segment ${value}${info ? " (unavailable)" : ""}`, value),
+      );
+    select.replaceChildren(...options);
+    select.value = value;
+  }
+
+  function renderOutputs() {
+    const current = device();
+    if (!current) return;
+    const info = deviceInfo();
+    const outputs = info?.outputs || [];
+    let choice = selectedOutputs.get(current.id);
+    if (
+      choice !== "all" &&
+      !outputs.some((output) => String(output.id) === choice)
+    ) {
+      const first =
+        current.targets[0] && outputsForTarget(current.targets[0], info);
+      choice =
+        first?.length === 1
+          ? String(first[0].id)
+          : outputs.length
+            ? String(outputs[0].id)
+            : "all";
+      selectedOutputs.set(current.id, choice);
+    }
+    const selectedOutput = outputs.find(
+      (output) => String(output.id) === choice,
+    );
+    $("wled-outputs-section").hidden = !outputs.length;
+    const signature = JSON.stringify([current.id, info?.segments, outputs]);
+    if (signature !== outputSignature) {
+      outputSignature = signature;
+      const list = $("wled-outputs");
+      list.replaceChildren();
+      for (const output of [...outputs, null]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.output = output ? String(output.id) : "all";
+        const name = document.createElement("strong");
+        name.textContent = output ? outputLabel(output) : "All targets";
+        const detail = document.createElement("span");
+        detail.textContent = output
+          ? `${output.type_name} · ${output.length} LEDs`
+          : "View all outputs together";
+        button.append(name, detail);
+        button.addEventListener("click", () => {
+          selectedOutputs.set(current.id, button.dataset.output);
+          renderOutputs();
+        });
+        list.append(button);
+      }
+      for (const root of $("wled-targets").querySelectorAll("[data-target]")) {
+        const target = current.targets.find(
+          (item) => item.id === root.dataset.target,
+        );
+        segmentOptions(root, target, info);
+      }
+    }
+    $("wled-outputs")
+      .querySelectorAll("[data-output]")
+      .forEach((button) => {
+        button.setAttribute(
+          "aria-pressed",
+          String(button.dataset.output === choice),
+        );
+        button.disabled = working;
+      });
+    let visible = 0;
+    for (const root of $("wled-targets").querySelectorAll("[data-target]")) {
+      const target = current.targets.find(
+        (item) => item.id === root.dataset.target,
+      );
+      const matches = outputsForTarget(target, info);
+      root.hidden =
+        !!selectedOutput &&
+        !matches.some((output) => String(output.id) === choice);
+      if (!root.hidden) visible++;
+      root.querySelector("[data-output-note]").textContent =
+        matches.length > 1
+          ? "This target spans multiple outputs. Create separate segments in WLED for independent effects."
+          : matches.length
+            ? `${outputLabel(matches[0])} · ${matches[0].type_name}`
+            : "Check the connection to load the controller's outputs and segments.";
+    }
+    const segments = outputSegments(selectedOutput, info);
+    $("wled-add-target").disabled =
+      working ||
+      current.targets.length >= 16 ||
+      (!!selectedOutput && !segments.length);
+    $("wled-add-target").textContent = selectedOutput
+      ? `Add target on ${outputLabel(selectedOutput)}`
+      : "Add target";
+    $("wled-output-empty").hidden =
+      visible > 0 && (!selectedOutput || segments.length > 0);
+    $("wled-output-empty").textContent =
+      selectedOutput && !segments.length
+        ? "This output needs its own segment in WLED. Create one there, then check the connection again."
+        : `No targets${selectedOutput ? ` on ${outputLabel(selectedOutput)}` : ""} yet. Add one to configure its colours and events.`;
+  }
+
   function render() {
     renderProfiles();
     const select = $("wled-device");
@@ -458,8 +607,18 @@
       ).content.firstElementChild.cloneNode(true);
       root.dataset.target = target.id;
       root.querySelector("[data-title]").textContent = target.name;
-      ["name", "mode", "segment", "start", "count"].forEach((key) => {
+      ["name", "mode", "start", "count"].forEach((key) => {
         field(root, key).value = target[key];
+      });
+      segmentOptions(root, target, deviceInfo());
+      field(root, "segment").addEventListener("change", () => {
+        collect();
+        const outputs = outputsForTarget(target, deviceInfo());
+        selectedOutputs.set(
+          current.id,
+          outputs.length === 1 ? String(outputs[0].id) : "all",
+        );
+        renderOutputs();
       });
       field(root, "enabled").checked = target.enabled;
       ["source", "rotation", "width", "height"].forEach((key) => {
@@ -599,6 +758,7 @@
     $("wled-phase").textContent =
       phases[latestStatus.game.phase] || latestStatus.game.phase;
     $("wled-reason").textContent = latestStatus.game.reason;
+    renderOutputs();
     $("wled-targets")
       .querySelectorAll("[data-flow-step]")
       .forEach((button) => {
@@ -783,7 +943,36 @@
   });
   $("wled-add-target").addEventListener("click", () => {
     collect();
-    device().targets.push(newTarget());
+    const current = device();
+    const info = deviceInfo();
+    const output = info?.outputs?.find(
+      (item) => String(item.id) === selectedOutputs.get(current.id),
+    );
+    const segments = outputSegments(output, info);
+    if (output && !segments.length) return;
+    const unused = segments.find(
+      (segment) =>
+        !current.targets.some(
+          (target) => target.enabled && target.segment === segment.id,
+        ),
+    );
+    const segment = unused || segments[0];
+    const target = newTarget();
+    if (segment) {
+      target.segment = segment.id;
+      target.name =
+        `${output ? `${outputLabel(output)} · ` : ""}${segment.name}`.slice(
+          0,
+          80,
+        );
+      target.enabled = !!unused;
+    } else if (
+      current.targets.some(
+        (item) => item.enabled && item.segment === target.segment,
+      )
+    )
+      target.enabled = false;
+    current.targets.push(target);
     markChanged();
     render();
   });
