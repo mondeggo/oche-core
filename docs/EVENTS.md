@@ -194,16 +194,17 @@ counts describe replay of the capture; it does not include the service's REST sn
 
 Checked October 2, 2026:
 
-- [Tools for AutoDarts types](../ressources/tools-for-autodarts-main/tools-for-autodarts-main/utils/websocket-helpers.ts)
+- [Tools for AutoDarts types](https://github.com/creazy231/tools-for-autodarts/blob/main/utils/websocket-helpers.ts)
   define the full match, player, visit and segment fields used by the parser.
-- [Tools' update handling](../ressources/tools-for-autodarts-main/tools-for-autodarts-main/utils/settle-game-data.ts)
+- [Tools' update handling](https://github.com/creazy231/tools-for-autodarts/blob/main/utils/settle-game-data.ts)
   uses `turns[0]` and describes repeated updates during corrections and visit completion.
-- [Tools' win identity](../ressources/tools-for-autodarts-main/tools-for-autodarts-main/utils/win.ts)
+- [Tools' win identity](https://github.com/creazy231/tools-for-autodarts/blob/main/utils/win.ts)
   uses match/set/leg/winning-dart identity to suppress duplicate wins.
-- [darts-caller](../ressources/darts-caller-master/darts-caller-master/darts-caller.py)
+- [darts-caller](https://github.com/lbormann/darts-caller/blob/master/darts-caller.py)
   also uses `turns[0]`, `gameWinner`, `winner`, `gameScores` and `busted` in `process_match_x01`.
-- [AutoGlow-2](../ressources/AutoGlow-2/core/autodarts_client.py) supplies cloud topic and takeout
-  references. Its last-turn selection and miss-to-bust effect mapping are not adopted.
+- The supplied AutoGlow-2 `core/autodarts_client.py` provides cloud topic and takeout
+  references. This local reference is excluded from Git. Its last-turn selection and
+  miss-to-bust effect mapping are not adopted.
 
 The X01 fixture and replay transitions are synthetic and based on these sources. They test
 local/remote/guest attribution, corrections, undo, busts, wins, leg changes and reconnection.

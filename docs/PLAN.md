@@ -1,6 +1,6 @@
 # OcheCore project plan
 
-Date: October 1, 2026. Original brief: `.idea`.
+Date: October 1, 2026. Based on the original locally supplied project brief.
 
 ## Goal and boundaries
 

@@ -6,3 +6,5 @@
 !src/**
 !config/
 !config/config.yaml
+**/__pycache__/
+**/*.py[cod]

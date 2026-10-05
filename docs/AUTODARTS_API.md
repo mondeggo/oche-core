@@ -135,14 +135,14 @@ with OcheCore's native JSON WebSocket at `/events`.
 
 ## AutoGlow-2 review — October 1, 2026
 
-The supplied [device routes](../ressources/AutoGlow-2/routes/autodarts_routes.py) implement
+The supplied AutoGlow-2 device routes (`routes/autodarts_routes.py`) implement
 the same JSON device-code flow as OcheCore. They hardcode `DEVICE_CLIENT_ID = "darts-caller"`,
 which explains why AutoGlow's UI does not require a Client ID. Its password-login path
 separately uses `autodarts-play`. These are application identifiers, not evidence that an
 OcheCore client has been registered. The OAuth guide still calls for an assigned Client ID
 with the device grant enabled.
 
-The [connection client](../ressources/AutoGlow-2/core/autodarts_client.py) adds a crucial
+Its connection client (`core/autodarts_client.py`) adds a crucial
 handshake: POST `/ms/v0/tickets` on the messaging gateway, read the response's `code`, then
 connect to `/ms/v0/subscribe?code=...`. This is also present in the
 [AutoDarts Play client bundle inspected on this date](https://play.autodarts.com/assets/clients-CqbIjROi.js).

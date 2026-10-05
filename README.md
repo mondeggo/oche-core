@@ -508,5 +508,7 @@ the workflow does not publish to PyPI, a container registry or GitHub Releases. 
 version is the version declared in `pyproject.toml`.
 
 Use English in all maintained source, comments, messages, UI, configuration examples and
-documentation. `.idea` remains the original user brief; `ressources/` contains unchanged
-third-party references. Neither is shipped in the package or Docker image.
+documentation. Local reference projects (`ressources/`), brief/editor files (`.idea`), agent
+guidance (`AGENTS.md`), runtime data, environment files and generated outputs are excluded
+from Git. Keep shared defaults in `config/config.yaml` and `.env.example`; use `.env` or a
+Compose override for machine-specific settings. Commit `uv.lock` with dependency changes.

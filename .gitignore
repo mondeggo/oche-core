@@ -1,12 +1,47 @@
+# Python environments and generated packages
 .venv/
+venv/
 .uv-cache/
 __pycache__/
 *.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Test, lint and coverage output
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Local settings and private runtime data
 .env
-data/
-dist/
-*.egg-info/
-ressources/
-AGENTS.md
+.env.*
+!.env.example
+/data/
+*.log
+/docker-compose.override.yml
+/docker-compose.override.yaml
+/compose.override.yml
+/compose.override.yaml
+
+# Local research, agent guidance and editor state
+/ressources/
+/AGENTS.md
+/.idea
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+node_modules/
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
