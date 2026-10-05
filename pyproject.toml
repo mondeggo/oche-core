@@ -1,6 +1,6 @@
 [project]
 name = "ochecore"
-version = "0.1.0"
+version = "0.1.1"
 description = "AutoDarts event gateway for audio callers and home automation"
 readme = "README.md"
 requires-python = ">=3.12"
