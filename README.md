@@ -467,8 +467,8 @@ Open `http://YOUR_LAN_IP:9180` from another device, using your configured port i
 
 ```powershell
 uv run pytest
-uv run ruff check src tests
-uv run ruff format --check src tests
+uv run ruff check src tests scripts
+uv run ruff format --check src tests scripts
 ```
 
 Tests use HTTP mocks and a local WebSocket test server; no AutoDarts account is required.
@@ -482,12 +482,15 @@ uv run pytest --basetemp (Join-Path $env:TEMP ("ochecore-tests-" + [guid]::NewGu
 
 The package version is `project.version` in `pyproject.toml`. Keep `__version__` in
 `src/ochecore/__init__.py` in sync; the CLI, `/healthz` and API schema use that value.
+Use release versions in `X.Y.Z` format, such as `0.1.1`.
 Check the installed version with `uv run ochecore --version`.
 
-### GitHub builds
+### GitHub builds and releases
 
 The **Build** workflow runs Ruff and pytest on Python 3.12 and 3.13 for pull requests and
-pushes to `main` or `master`. No repository secrets or AutoDarts account are needed.
+pushes to `main` or `master`. Publishing uses the built-in `GITHUB_TOKEN`; no extra credentials
+or AutoDarts account are needed. Repository policies must allow Actions to write contents
+and packages. Pull requests and forked repositories cannot run the publishing job.
 
 Build artifacts are created only when a push to `main` or `master` changes
 `project.version` in `pyproject.toml` and the checks pass. The comparison covers the whole
@@ -498,7 +501,7 @@ To create a new build, update the version in `pyproject.toml` and
 `src/ochecore/__init__.py`, run `uv lock`, then commit and push those changes. Tags do not
 trigger another build. To retry a failed build, rerun its original workflow run in Actions.
 
-A successful version change produces these downloadable artifacts:
+A successful version change builds these artifacts, then publishes them together:
 
 | Artifact | Contents |
 |---|---|
@@ -510,9 +513,28 @@ Each package and image is checked for CLI startup, API health, voice catalogue a
 UI assets. ARM64 uses emulation; testing on a physical Raspberry Pi is still needed. Voice
 recordings are downloaded when selected at runtime and are not bundled in builds.
 
-Download artifacts from a completed run's **Artifacts** section; they are retained for 14
-days. Extract the download, then install a wheel with `uv tool install path/to/ochecore.whl`
-(use the actual filename), or load a Docker archive:
+**Releases** contains a `vX.Y.Z` release with the wheel, source archive, both Docker archives
+and `SHA256SUMS`. Release notes are generated automatically. The version tag points to the
+tested commit; rerunning a completed release leaves it unchanged. A failed publication keeps
+its draft for retry. If the tag points to another commit, bump the version instead of moving it.
+
+**Packages** contains `ghcr.io/mondeggo/oche-core:X.Y.Z`, supporting Linux amd64 and arm64.
+The highest published version also has the `latest` tag. Images are published from the tested
+archives. Publishing is queued so an older build cannot replace a newer `latest` image.
+The image name follows the GitHub repository's owner and name.
+
+GitHub initially creates container packages as private. To allow unauthenticated pulls, open
+the package's settings and change its visibility to Public once. The workflow does not change
+package visibility. See [GitHub's container registry guide](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
+For example, pull the release for your platform:
+
+```sh
+docker pull ghcr.io/mondeggo/oche-core:0.1.1
+```
+
+Downloads also remain in the workflow run's **Artifacts** section for 14 days. Install a wheel
+with `uv tool install path/to/ochecore.whl` (use its actual filename), or load a Docker archive:
 
 ```sh
 docker load --input ochecore-linux-amd64.tar.gz
@@ -521,9 +543,8 @@ docker run --rm -p 127.0.0.1:9180:9180 --mount type=bind,source="$(pwd)/data",ta
 
 Create `data` first and replace `RUN_NUMBER` with the workflow run number; `docker load`
 also prints the full image tag. On Linux, make the folder writable by container UID 10001.
-For ARM64, replace `amd64` with `arm64`. These builds are uploaded as Actions artifacts;
-the workflow does not publish to PyPI, a container registry or GitHub Releases. The package
-version is the version declared in `pyproject.toml`.
+For ARM64, replace `amd64` with `arm64`. Python packages are attached to Releases; publishing
+to PyPI is not configured.
 
 Use English in all maintained source, comments, messages, UI, configuration examples and
 documentation. Local reference projects (`ressources/`), brief/editor files (`.idea`), agent

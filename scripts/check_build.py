@@ -1,6 +1,7 @@
 """Smoke-test an installed distribution without an account, hardware or network access."""
 
 import subprocess
+from importlib.metadata import version
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -18,6 +19,7 @@ def reject_request(request: httpx.Request) -> httpx.Response:
 
 
 subprocess.run(["ochecore", "--version"], check=True)
+assert version("ochecore") == __version__, "Package and runtime versions must match."
 assert VOICES, "The voice catalogue must be included in the package."
 
 for ui_enabled in (True, False):
