@@ -16,9 +16,9 @@ from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect
 
 from ochecore import __version__
-from ochecore.caller import CallerConfig
 from ochecore.config import Settings
-from ochecore.wled import EffectName, WLEDConfig
+from ochecore.integrations.caller.service import CallerConfig
+from ochecore.integrations.wled.service import EffectName, WLEDConfig
 
 
 class ControlError(Exception):
@@ -392,7 +392,7 @@ def execute_caller(args, client) -> None:
         voices = request(client, "GET", "/api/caller/voices")
         print_json([v for v in voices if not args.language or v["language"] == args.language])
     elif command == "install":
-        from ochecore.voices import VOICES
+        from ochecore.integrations.caller.voices import VOICES
 
         if args.voice not in VOICES:
             raise ControlError("Unknown voice. Run caller voices to find its ID.")

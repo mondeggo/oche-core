@@ -3,7 +3,7 @@ import asyncio
 import anyio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ochecore.http import same_origin
+from ochecore.api.http import same_origin
 
 router = APIRouter()
 

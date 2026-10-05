@@ -6,10 +6,10 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import ValidationError
 
 from ochecore import __version__
-from ochecore.caller import CallerConfig, CallerTest
 from ochecore.config import ConnectionConfig
 from ochecore.events import DebugRecording, Event
-from ochecore.wled import (
+from ochecore.integrations.caller.service import CallerConfig, CallerTest
+from ochecore.integrations.wled.service import (
     DeviceAddress,
     DraftPreview,
     Power,

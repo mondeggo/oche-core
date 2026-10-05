@@ -12,14 +12,13 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from zeroconf import IPVersion, ServiceStateChange
 
-from ochecore import wled
 from ochecore.autodarts.auth import DeviceAuth
 from ochecore.autodarts.cloud import CloudConnection
 from ochecore.autodarts.errors import ConnectionProblem
 from ochecore.cli import ControlError, execute, parser
 from ochecore.events import Event, EventBus, EventNormalizer
-from ochecore.main import create_app
-from ochecore.wled import (
+from ochecore.integrations.wled import service as wled
+from ochecore.integrations.wled.service import (
     WLED,
     Appearance,
     Device,
@@ -37,6 +36,7 @@ from ochecore.wled import (
     request,
     validate_capabilities,
 )
+from ochecore.main import create_app
 
 
 @pytest.mark.parametrize(
@@ -988,7 +988,7 @@ async def test_priority_expiry_corrections_and_target_preview(monkeypatch):
         worker.accept(event("turn_end", score=180, busted=False))
         assert worker.desired(view)["seg"][0]["col"] == [[160, 0, 255]]
         future = time.monotonic() + 5
-        monkeypatch.setattr("ochecore.wled.time.monotonic", lambda: future)
+        monkeypatch.setattr("ochecore.integrations.wled.service.time.monotonic", lambda: future)
         assert worker.desired({**view, "phase": "takeout"})["seg"][0]["col"] == [[255, 255, 0]]
         worker.accept(event("bust", player={"is_local": False}))
         assert not worker.overlays

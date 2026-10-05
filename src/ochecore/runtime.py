@@ -4,11 +4,11 @@ import httpx
 
 from ochecore.autodarts.auth import DeviceAuth
 from ochecore.autodarts.cloud import CloudConnection
-from ochecore.caller import Caller
 from ochecore.config import ConnectionConfig, Settings
 from ochecore.events import EventBus, RawEventRecorder
+from ochecore.integrations.caller.service import Caller
+from ochecore.integrations.wled.service import WLED
 from ochecore.storage import write_private_json
-from ochecore.wled import WLED
 
 
 class Runtime:

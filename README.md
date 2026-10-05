@@ -21,21 +21,25 @@ OcheCore/
 ├── src/
 │   └── ochecore/
 │       ├── main.py          # application setup and lifecycle
-│       ├── http.py          # HTTP controls, health checks and optional UI route
-│       ├── websocket.py     # live event streaming and subscriber cleanup
 │       ├── cli.py           # terminal controls over the service API
 │       ├── config.py        # validated settings
 │       ├── runtime.py       # connection lifecycle
 │       ├── storage.py       # atomic persistence
 │       ├── events.py        # parsing, game event normalization and bounded dispatch
-│       ├── wled.py          # controllers, lighting targets, effects and matrix rendering
-│       ├── caller.py        # game announcements and host/browser audio controls
-│       ├── voices.py        # voice installation and local sound lookup
-│       ├── voices.json      # provider voice catalogue
+│       ├── api/
+│       │   ├── http.py      # HTTP controls, health checks and optional UI route
+│       │   └── websocket.py # live event streams and subscriber cleanup
 │       ├── autodarts/
 │       │   ├── auth.py
 │       │   ├── cloud.py     # cloud connection and match tracking
 │       │   └── errors.py
+│       ├── integrations/
+│       │   ├── caller/
+│       │   │   ├── service.py  # game announcements and audio playback
+│       │   │   ├── voices.py   # voice installation and local sound lookup
+│       │   │   └── voices.json # provider voice catalogue
+│       │   └── wled/
+│       │       └── service.py  # controllers, lighting, effects and matrix scores
 │       └── static/          # optional minimal control interface
 ├── config/config.yaml
 ├── tests/
@@ -47,9 +51,10 @@ OcheCore/
 ```
 
 All application source lives under `src/ochecore/`. `main.py` assembles the application;
-`http.py` handles HTTP routes and `websocket.py` handles live event streaming. Event handling
-lives in `events.py` and AutoDarts connections in `autodarts/`. Future integrations will get
-modules when they are implemented.
+`api/` contains HTTP routes and WebSocket streams. `integrations/` groups each implemented
+integration with its own code and assets. Shared event processing stays in `events.py`,
+AutoDarts connections in `autodarts/`, and browser assets in `static/`. The CLI and API use
+the same runtime. Add further modules when they have a distinct responsibility.
 OcheCore uses the AutoDarts cloud. The legacy local-board adapter has been removed.
 
 ## Start with uv

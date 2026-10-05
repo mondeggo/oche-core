@@ -14,8 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ochecore.autodarts.errors import ConnectionProblem
 from ochecore.events import Event, EventBus
+from ochecore.integrations.caller.voices import VoiceLibrary
 from ochecore.storage import write_private_json
-from ochecore.voices import VoiceLibrary
 
 GAME_MODES = (
     "X01",

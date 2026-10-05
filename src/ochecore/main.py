@@ -7,13 +7,13 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ochecore import __version__
+from ochecore.api.http import create_router as create_http_router
+from ochecore.api.http import same_origin
+from ochecore.api.websocket import router as websocket_router
 from ochecore.autodarts.auth import safe_error
 from ochecore.autodarts.errors import ConnectionProblem
 from ochecore.config import Settings
-from ochecore.http import create_router as create_http_router
-from ochecore.http import same_origin
 from ochecore.runtime import Runtime
-from ochecore.websocket import router as websocket_router
 
 STATIC = Path(__file__).parent / "static"
 

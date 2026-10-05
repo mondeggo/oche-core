@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 
 from ochecore import __version__
 from ochecore.config import Settings
+from ochecore.integrations.caller.voices import VOICES
 from ochecore.main import create_app
-from ochecore.voices import VOICES
 
 
 def reject_request(request: httpx.Request) -> httpx.Response:

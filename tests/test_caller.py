@@ -13,7 +13,9 @@ from conftest import BOARD_ID, MATCH_ID
 from fastapi.testclient import TestClient
 
 from ochecore.autodarts.errors import ConnectionProblem
-from ochecore.caller import (
+from ochecore.cli import execute, parser
+from ochecore.events import Event, EventBus, EventNormalizer
+from ochecore.integrations.caller.service import (
     GAME_MODES,
     Caller,
     CallerConfig,
@@ -24,10 +26,8 @@ from ochecore.caller import (
     game_mode,
     plan_batch,
 )
-from ochecore.cli import execute, parser
-from ochecore.events import Event, EventBus, EventNormalizer
+from ochecore.integrations.caller.voices import VOICES, VoiceLibrary, unpack_pack
 from ochecore.main import create_app
-from ochecore.voices import VOICES, VoiceLibrary, unpack_pack
 
 VOICE = "amazon-fr-fr-remi-male"
 
@@ -119,7 +119,7 @@ def test_invalid_pack_and_expansion_limits(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="count"):
         unpack_pack(archive, tmp_path, VOICE)
     archive.write_bytes(archive_bytes())
-    monkeypatch.setattr("ochecore.voices.MAX_EXPANDED", 5)
+    monkeypatch.setattr("ochecore.integrations.caller.voices.MAX_EXPANDED", 5)
     with pytest.raises(ValueError, match="large"):
         unpack_pack(archive, tmp_path, VOICE)
 
@@ -150,7 +150,7 @@ async def test_install_background_success_failure_and_catalogue(tmp_path):
 
 
 async def test_download_limit_leaves_no_installed_pack(tmp_path, monkeypatch):
-    monkeypatch.setattr("ochecore.voices.MAX_DOWNLOAD", 4)
+    monkeypatch.setattr("ochecore.integrations.caller.voices.MAX_DOWNLOAD", 4)
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"too large"))
     ) as http:
