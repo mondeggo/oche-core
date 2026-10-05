@@ -172,44 +172,16 @@ evict entries from a normalized subscriber's queue or normalized history.
 AutoDarts subscription errors also remain in the raw stream. They appear under
 `cloud.subscription_errors` in `/api/status`, rather than being counted as malformed messages.
 Rejection of a board or match topic marks the connection `degraded` and makes `/readyz` return
-503. OcheCore subscribes only to board and match topics. The unused user-events subscription
-was removed after the development Client ID rejected it. Errors clear on topic removal,
-incoming data for that topic, or reconnection.
+503. Errors clear on topic removal, incoming data for that topic or reconnection.
 
-The October 2 live recording contains 490 frames, including X01 and Cricket scoring states.
-It confirmed `Throw` as an explicit board-ready status and `0001-01-01T00:00:00Z` as an
-unfinished visit, rather than an end-of-turn signal. Paired board state/event frames preserve
-readiness; scored darts do not invalidate a matching board throw count. Reduced, anonymized
-visits cover this behavior and a real dart correction in the regression tests.
+Board status `Throw` explicitly indicates readiness. A visit end time of
+`0001-01-01T00:00:00Z` means unfinished. Calibration takes priority over a remembered takeout
+and shows `waiting`, including outside a match. Paired board state/event frames preserve
+readiness; scored darts do not invalidate a matching board throw count.
 
-Rechecked October 3: the same 490-frame file remains the latest capture. It contains 182 full
-scoring states (150 X01 and 32 Cricket) plus one partial match update. Ordered replay accepts
-every full state and emits 334 normalized events, including 114 throws and two corrections.
-Calibration exposed a phase issue after completed visits: a remembered takeout could override
-the explicit `Calibrating` status. Calibration now takes priority and shows `waiting`, including
-outside a match. All seven captured calibration states show this phase after the fix. These
-counts describe replay of the capture; it does not include the service's REST snapshots.
+## Coverage and limits
 
-## Comparison with supplied resources
-
-Checked October 2, 2026:
-
-- [Tools for AutoDarts types](https://github.com/creazy231/tools-for-autodarts/blob/main/utils/websocket-helpers.ts)
-  define the full match, player, visit and segment fields used by the parser.
-- [Tools' update handling](https://github.com/creazy231/tools-for-autodarts/blob/main/utils/settle-game-data.ts)
-  uses `turns[0]` and describes repeated updates during corrections and visit completion.
-- [Tools' win identity](https://github.com/creazy231/tools-for-autodarts/blob/main/utils/win.ts)
-  uses match/set/leg/winning-dart identity to suppress duplicate wins.
-- [darts-caller](https://github.com/lbormann/darts-caller/blob/master/darts-caller.py)
-  also uses `turns[0]`, `gameWinner`, `winner`, `gameScores` and `busted` in `process_match_x01`.
-- The supplied AutoGlow-2 `core/autodarts_client.py` provides cloud topic and takeout
-  references. This local reference is excluded from Git. Its last-turn selection and
-  miss-to-bust effect mapping are not adopted.
-
-The X01 fixture and replay transitions are synthetic and based on these sources. They test
-local/remote/guest attribution, corrections, undo, busts, wins, leg changes and reconnection.
-The real board detail response confirmed nested `state.connected`. Live X01 and Cricket
-visits now supplement the synthetic cases; see the capture notes above.
-Caller replay tests now cover the common scoring/win contracts in all 14 reference modes,
-CountUp aliases and Cricket/Tactics, plus targeted checkout and target cases. These transitions
-are synthetic; full live-match acceptance across the modes remains pending.
+Synthetic replay tests cover corrections, undo, busts, wins, leg changes, player attribution
+and reconnection. Anonymized X01 and Cricket captures add real scoring and correction cases.
+Caller replay tests cover all 14 supported game modes. Full live-match acceptance across
+modes and long-running recovery remain pending.

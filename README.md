@@ -7,13 +7,10 @@ with separate raw AutoDarts streams. A small optional web interface uses the sam
 The service owns authentication, persistence and event processing and keeps running when
 either client closes. It starts without a configured board. WLED supports phase lighting,
 temporary game effects and numeric matrix scores. Caller supports downloadable voices,
-host/browser playback and all 14 reference game modes. MQTT and Home Assistant remain planned.
-Event interpretation is tested against the supplied contracts; full live gameplay acceptance
-remains to be done.
+host/browser playback and 14 game modes. MQTT and Home Assistant remain planned.
+Full live gameplay acceptance remains to be done.
 
-- [Project plan](docs/PLAN.md)
-- [API research](docs/AUTODARTS_API.md)
-- [Validation notes](docs/VALIDATION.md)
+- [AutoDarts connection protocol](docs/AUTODARTS_API.md)
 - [Event API and normalization rules](docs/EVENTS.md)
 - [Caller voices, game modes and playback](docs/CALLER.md)
 
@@ -161,7 +158,7 @@ docker compose exec ochecore ochecore events --follow
 1. Configure an OAuth Client ID with Device Authorization Grant enabled.
    The [integration guide](https://gist.github.com/lloydowen/960079f2b518f6f5d68e160465298964)
    lists `lloydowen` on Discord as the registration contact. This development checkout uses
-   `darts-caller` as requested; replace it with OcheCore's assigned ID before distribution.
+   `darts-caller`; replace it with OcheCore's assigned ID before distribution.
 2. Run `ochecore login` or use **Connect account** in the optional UI. You can test login
    before installing a board.
 3. Install/configure AutoDarts Desktop or Headless, then run `ochecore boards`. The UI loads
@@ -220,7 +217,7 @@ output to edit its targets, or **All targets** to see the whole controller. Sele
 only the view. **Add target on GPIO …** uses an available segment on that output; an already
 used segment starts with the new target disabled to avoid overlapping rules.
 
-Output detection reads WLED's LED hardware configuration, following AutoGlow 2's approach.
+Output detection reads WLED's LED hardware configuration.
 The segment selector shows the corresponding GPIO labels. **Check connection** refreshes
 this information. Older or locked firmware can still use segments without pin information.
 An output needs its own WLED segment for independent native effects; OcheCore does not change
@@ -267,7 +264,7 @@ waiting appearance; use **Lights off** when you want them dark.
 
 Defaults are green for confirmed ready, yellow for takeout, red for waiting and dim white
 when idle. The **Phases** tab shows these stages with brightness sliders and inline previews.
-The **Events** tab, informed by AutoGlow 2's per-segment configuration, groups rules into:
+The **Events** tab groups rules into:
 
 - **Match & victories:** leg and match wins.
 - **Hits & throws:** any dart, single, double, triple, outer bull, bullseye, miss, 180 and bust.
@@ -398,11 +395,9 @@ Copy `.env.example` to `.env` for environment-based setup. Restart after changin
 `.env`. Docker fixes the container port to 9180 and data directory to `/data`;
 `OCHECORE_PORT` controls the published host port.
 
-The old browser Board Manager on port 3180 is unsupported in AutoDarts v2; local detection
-still runs on the board. OcheCore no longer polls the legacy `/api/state` endpoint. Existing
-saved `local_board_url` settings are ignored on load and omitted on the next configuration
-save. Old YAML/environment options for that adapter are also ignored. See the
-[API research](docs/AUTODARTS_API.md) for evidence and scope.
+OcheCore uses the AutoDarts cloud connection. Legacy `local_board_url` settings are ignored
+on load and omitted on the next configuration save. See the
+[connection protocol](docs/AUTODARTS_API.md) for authentication and subscriptions.
 
 ## API
 
@@ -449,6 +444,14 @@ The interface is for trusted local networks. `OCHECORE_HOST` controls the uv lis
 Anyone who can access it can read events and edit settings. Remote access requires an
 authenticated reverse proxy and TLS; do not publish port 9180 directly to the Internet.
 
+## Next work
+
+- Verify full matches, recovery after Internet outages and long-running token refresh.
+- Complete live WLED, physical matrix and speaker checks, plus caller coverage across game modes.
+- Validate authentication with an OAuth Client ID assigned to OcheCore before distribution.
+- Add MQTT, Home Assistant and an optional scoreboard overlay.
+- Add configuration backup/restore and access control for shared deployments; verify on Raspberry Pi.
+
 ## Development
 
 Use `uv run ochecore serve` with the checked-in configuration, or run `scripts\dev.bat` on
@@ -464,7 +467,17 @@ uv run ruff format --check src tests
 ```
 
 Tests use HTTP mocks and a local WebSocket test server; no AutoDarts account is required.
-[Validation notes](docs/VALIDATION.md) include a Windows temporary-directory workaround.
+If Windows denies access to an old pytest temporary folder, use a fresh one:
+
+```powershell
+uv run pytest --basetemp (Join-Path $env:TEMP ("ochecore-tests-" + [guid]::NewGuid()))
+```
+
+### Version
+
+The package version is `project.version` in `pyproject.toml`. Keep `__version__` in
+`src/ochecore/__init__.py` in sync; the CLI, `/healthz` and API schema use that value.
+Check the installed version with `uv run ochecore --version`.
 
 ### GitHub builds
 

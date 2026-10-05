@@ -7,8 +7,8 @@ Use **Play test** to check the selected output without starting a match.
 
 ## Voices and output
 
-The catalogue contains 102 presets from the supplied darts-caller catalogue, with links to
-the [Peschi previews](https://darts-caller-preview.peschi.org/). French includes Rémi and Léa.
+Choose a voice using the [Peschi previews](https://darts-caller-preview.peschi.org/).
+French includes Rémi and Léa.
 The catalogue is metadata, not downloaded audio. Saving a voice downloads only that selected
 pack in the background. Once installation succeeds, other cached packs are removed, along with
 temporary ZIP files. A failed download preserves the previous pack; reselect it or use **Retry
@@ -79,7 +79,7 @@ Automatic dart announcements use the following policy; `segment`, `score` and `o
 
 ATC, Killer, Segment Training and Bull-off do not announce a physical dart sum as a game total.
 Target and checkout fields are optional; absence suppresses that contextual call. These rules
-use the reference contracts and have synthetic replay coverage for all 14 modes. They do not
+have synthetic replay coverage for all 14 modes. They do not
 reimplement the game's scoring engine. Live acceptance across all modes remains pending.
 
 Wins take priority over busts, which take priority over visit totals in the same update batch.
@@ -127,17 +127,12 @@ Set `AUDIO_GID` to the numeric group owning `/dev/snd` on that host. This is opt
 default Compose file also works on Windows. The image includes ALSA/PulseAudio runtime libraries;
 physical output still depends on host permissions and sound configuration.
 
-## Reference compatibility
+## Voice packs
 
-The catalogue data and ZIP/CSV mapping follow the supplied `darts-caller` resources. CSV rows
+The catalogue and ZIP/CSV format follow [darts-caller](https://github.com/Peschi90/darts-caller). CSV rows
 correspond to sorted audio files; aliases and `+N` variants share a sound key. Nested audio ZIPs
 are supported. Installation uses bounded downloads/expansion, generated local filenames and
 an atomic directory rename. Only catalogue download URLs can be requested.
 
-The implementation was written independently. No declared licence was found in the supplied
-darts-caller repository or its inspected upstream repositories. Provider audio reuse terms were
-not established; packs are downloaded locally on request, rather than redistributed by OcheCore.
-
-References: [darts-caller](https://github.com/Peschi90/darts-caller), supplied
-`assets/caller_profiles.py` and game handlers, and Tools for AutoDarts
-`entrypoints/match.content/caller.ts`, `utils/game-modes.ts` and `utils/websocket-helpers.ts`.
+The implementation was written independently. Provider audio reuse terms have not been
+established. OcheCore downloads selected packs locally and does not redistribute recordings.
