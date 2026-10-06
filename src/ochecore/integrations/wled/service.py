@@ -470,8 +470,20 @@ async def inspect_device(
                 for key in ("id", "start", "stop", "length")
             ):
                 raise ValueError
+            source = next(s for s in state["seg"] if s["id"] == segment["id"])
+            transformed = (
+                source.get("grp", 1) != 1
+                or source.get("spc", 0) != 0
+                or source.get("of", 0) != 0
+                or any(source.get(key, False) for key in ("rev", "mi", "rY", "mY", "tp"))
+            )
+            segment["pixel_control_error"] = (
+                "In WLED, set segment grouping to 1, spacing and offset to 0, "
+                "and disable reverse, mirror and transpose before using pixels or scores."
+                if transformed
+                else None
+            )
             if canvas and segment["start"] < canvas["w"] * canvas["h"]:
-                source = next(s for s in state["seg"] if s["id"] == segment["id"])
                 start_y, stop_y = source["startY"], source["stopY"]
                 if (
                     type(start_y) is not int
@@ -489,18 +501,6 @@ async def inspect_device(
                 segment["matrix"] = matrix
                 # WLED 0.15 serializes len as X width, even for a 2D segment.
                 segment["length"] = matrix["width"] * matrix["height"]
-                transformed = (
-                    source.get("grp", 1) != 1
-                    or source.get("spc", 0) != 0
-                    or source.get("of", 0) != 0
-                    or any(source.get(key, False) for key in ("rev", "mi", "rY", "mY", "tp"))
-                )
-                segment["pixel_control_error"] = (
-                    "In WLED, set segment grouping to 1, spacing and offset to 0, "
-                    "and disable reverse, mirror and transpose before using pixels or scores."
-                    if transformed
-                    else None
-                )
         effects = data.get("effects", ["Solid"])
         if not isinstance(effects, list) or not all(isinstance(item, str) for item in effects):
             raise ValueError
@@ -792,7 +792,6 @@ class DeviceWorker:
         self.last_sent: str | None = None
         self.sent = 0
         self.overlays: dict[str, tuple[float, int, Effect]] = {}
-        self.preview: tuple[float, Preview] | None = None
         self.last_payload: dict | None = None
 
     async def probe(self, *, refresh: bool = False) -> dict:
@@ -838,16 +837,8 @@ class DeviceWorker:
         self.overlays = {key: item for key, item in self.overlays.items() if item[0] > now}
         if not view["available"]:
             self.overlays.clear()
-        if self.preview and self.preview[0] <= now:
-            self.preview = None
         overlays = {key: item[2] for key, item in self.overlays.items()}
-        if self.preview:
-            test = self.preview[1]
-            target = next(t for t in self.device.targets if t.id == test.target_id)
-            overlays[target.id] = preview_appearance(target, test)
-        return payload(
-            self.device, view, overlays, self.preview[1] if self.preview else None, info=self.info
-        )
+        return payload(self.device, view, overlays, info=self.info)
 
     async def send(self, body: dict) -> None:
         if body["seg"]:
@@ -886,7 +877,6 @@ class DeviceWorker:
                         except ConnectionProblem as exc:
                             self.error, self.connected = str(exc), False
                             self.overlays.clear()
-                            self.preview = None
                             next_probe = 0
                             next_retry = time.monotonic() + 5
             finally:
@@ -1113,7 +1103,6 @@ class WLED:
                     worker.power_off = not on
                     worker.connected, worker.error = True, None
                     worker.overlays.clear()
-                    worker.preview = None
                     worker.last_payload = None
                     results.append({"id": worker.device.id, "on": on, "applied": True})
                 except ConnectionProblem as exc:
@@ -1137,6 +1126,8 @@ class WLED:
             snapshot = await request(self.http, device, "/json")
             info = await inspect_device(self.http, device, data=snapshot, metadata=True)
             validate_capabilities(device, info)
+            if worker:
+                worker.info = info
             state = snapshot["state"]
             segment = next(s for s in state["seg"] if s["id"] == target.segment)
             managed = bool(worker and self.config.enabled and worker.device.enabled)
@@ -1181,7 +1172,6 @@ class WLED:
                 try:
                     await request(self.http, device, "/json/state", restore)
                     if managed and state.get("on") is not False:
-                        worker.preview = None
                         await worker.send(worker.desired(self.view()))
                 except ConnectionProblem as exc:
                     if worker:
@@ -1189,27 +1179,19 @@ class WLED:
                     raise ConnectionProblem(
                         "Preview ended, but WLED could not be restored. Check its connection."
                     ) from exc
+            if worker:
+                worker.connected, worker.error = True, None
         return {"applied": True, "restored": True, "duration": draft.duration}
 
     async def test(self, device_id: str, preview: Preview) -> dict:
         worker = self.worker(device_id)
-        if not self.config.enabled or not worker.device.enabled:
-            raise ConnectionProblem("Enable WLED and this device before testing a target.")
-        if not any(t.id == preview.target_id and t.enabled for t in worker.device.targets):
-            raise ConnectionProblem("Unknown or disabled WLED target.")
-        preview_appearance(
-            next(t for t in worker.device.targets if t.id == preview.target_id), preview
-        )
-        async with worker.lock:
-            try:
-                await worker.probe()
-                worker.preview = (time.monotonic() + preview.duration, preview)
-                await worker.send(worker.desired(self.view()))
-            except ConnectionProblem as exc:
-                worker.preview = None
-                worker.error, worker.connected = str(exc), False
-                raise
-        return {"applied": True, "duration": preview.duration}
+        try:
+            return await self.preview_draft(
+                DraftPreview(device=worker.device, **preview.model_dump())
+            )
+        except ConnectionProblem as exc:
+            worker.error, worker.connected = str(exc), False
+            raise
 
     def status(self) -> dict:
         return {

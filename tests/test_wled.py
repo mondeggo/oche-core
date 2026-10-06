@@ -280,7 +280,7 @@ def test_unsaved_probe_and_cli_keep_configuration_unchanged(settings, capsys):
         assert all(r.method == "GET" and r.url.host == "draft.test" for r in requests)
         assert client.get("/api/wled").json() == before
         assert not (settings.data_dir / "wled.json").exists()
-        args = parser().parse_args(["wled", "probe", "--url", "http://draft.test"])
+        args = parser().parse_args(["wled", "probe", "--url", "http://draft.test", "--json"])
         assert args.url == "http://127.0.0.1:9180"
         execute(args, client)
         assert json.loads(capsys.readouterr().out)["version"] == "0.15.3"
@@ -354,6 +354,76 @@ async def test_draft_preview_restores_on_cancellation(tmp_path):
         with pytest.raises(asyncio.CancelledError):
             await task
         assert len(sent) == 2 and sent[-1]["seg"][0]["bri"] == 77
+
+
+@pytest.mark.parametrize("mode", ["segment", "pixels", "matrix"])
+async def test_saved_preview_wakes_and_restores_disabled_device_without_saving(tmp_path, mode):
+    snapshot = preview_state()
+    snapshot["state"].update(on=False, bri=0)
+    snapshot["state"]["seg"][0].update(stop=128, len=128)
+    sent = []
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=snapshot)
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"success": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        service = WLED(tmp_path / "wled.json", http, EventBus(), lambda: {})
+        await service.configure(
+            WLEDConfig(
+                devices=[
+                    device(
+                        enabled=False,
+                        targets=[
+                            {
+                                "id": "ring",
+                                "name": "Ring",
+                                "enabled": False,
+                                "mode": mode,
+                            }
+                        ],
+                    )
+                ]
+            )
+        )
+        before = service.path.read_bytes()
+        result = await service.test("board", Preview(target_id="ring", duration=0.5))
+        assert result == {"applied": True, "restored": True, "duration": 0.5}
+        assert sent[0] == {"on": True, "bri": 128, "tt": 0}
+        assert sent[-1]["on"] is False and sent[-1]["bri"] == 0
+        assert sent[-1]["seg"][0]["col"] == [[4, 5, 6]]
+        assert ("i" in sent[1]["seg"][0]) is (mode != "segment")
+        assert service.path.read_bytes() == before
+        assert not service.tasks and service.status()["devices"][0]["connected"]
+        await service.close()
+
+
+async def test_saved_preview_restores_power_on_cancellation(tmp_path):
+    snapshot = preview_state()
+    snapshot["state"]["on"] = False
+    sent, applied = [], asyncio.Event()
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=snapshot)
+        sent.append(json.loads(request.content))
+        if "seg" in sent[-1]:
+            applied.set()
+        return httpx.Response(200, json={"success": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        service = WLED(tmp_path / "wled.json", http, EventBus(), lambda: {})
+        await service.configure(WLEDConfig(devices=[device()]))
+        task = asyncio.create_task(service.test("board", Preview(target_id="ring")))
+        await asyncio.wait_for(applied.wait(), 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert len(sent) == 3
+        assert sent[0]["on"] is True and sent[-1]["on"] is False
+        await service.close()
 
 
 async def test_lights_off_survives_game_events_and_configuration_updates(tmp_path):
@@ -437,7 +507,7 @@ def test_profiles_keep_independent_colors_shared_hardware_and_persist(settings, 
     with TestClient(create_app(settings)) as client:
         initial = WLEDConfig(devices=[device()]).model_dump(mode="json")
         assert client.put("/api/wled", json=initial).status_code == 200
-        execute(parser().parse_args(["wled", "profiles", "create", "Quiet"]), client)
+        execute(parser().parse_args(["wled", "profiles", "create", "Quiet", "--json"]), client)
         quiet = json.loads(capsys.readouterr().out)["active_profile"]
         current = client.get("/api/wled").json()
         current["devices"][0]["url"] = "http://shared.test"
@@ -501,7 +571,10 @@ def test_blank_profiles_keep_hardware_and_start_without_rules(settings, capsys, 
         assert client.put("/api/wled", json=initial).status_code == 200
         original = client.get("/api/wled").json()["devices"]
         if via_cli:
-            execute(parser().parse_args(["wled", "profiles", "create", "Fresh", "--blank"]), client)
+            execute(
+                parser().parse_args(["wled", "profiles", "create", "Fresh", "--blank", "--json"]),
+                client,
+            )
             profile_id = json.loads(capsys.readouterr().out)["active_profile"]
         else:
             response = client.post("/api/wled/profiles", json={"name": "Fresh", "source": "blank"})
@@ -571,7 +644,7 @@ def test_power_api_cli_and_failed_devices(settings, capsys):
             devices=[device(), device(id="offline", url="http://offline.test")]
         ).model_dump(mode="json")
         client.put("/api/wled", json=values)
-        execute(parser().parse_args(["wled", "off", "board"]), client)
+        execute(parser().parse_args(["wled", "off", "board", "--json"]), client)
         assert json.loads(capsys.readouterr().out)["applied"]
         assert sent == [{"on": False}]
         result = client.post("/api/wled/power", json={"on": False}).json()
@@ -893,6 +966,33 @@ async def test_native_matrix_pixel_transforms_are_rejected_without_changing_wled
     validate_capabilities(device(), info)  # Whole-segment native effects keep their settings.
 
 
+@pytest.mark.parametrize(
+    "field,value", [("grp", 2), ("spc", 1), ("of", 1), ("rev", True), ("mi", True)]
+)
+@pytest.mark.parametrize("mode", ["pixels", "matrix"])
+async def test_linear_pixel_transforms_are_rejected_before_preview(tmp_path, field, value, mode):
+    snapshot = preview_state()
+    snapshot["state"]["seg"][0].update({"stop": 128, "len": 128, field: value})
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=snapshot)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        service = WLED(tmp_path / "wled.json", http, EventBus(), lambda: {})
+        target = {"id": "ring", "name": "Ring", "mode": mode}
+        if mode == "pixels":
+            target.update(start=64, count=32)
+        with pytest.raises(ConnectionProblem, match="In WLED, set segment grouping"):
+            await service.preview_draft(
+                DraftPreview(device=device(targets=[target]), target_id="ring")
+            )
+        assert all(request.method == "GET" for request in requests)
+        info = await inspect_device(http, device(), data=snapshot)
+        validate_capabilities(device(), info)  # Native effects can retain their transforms.
+
+
 @pytest.mark.parametrize("width,height,start", [(11, 8, 0), (16, 5, 0), (16, 8, 1)])
 async def test_native_matrix_scores_require_full_segment_geometry(width, height, start):
     board = device(
@@ -978,7 +1078,7 @@ async def test_capabilities_bounds_reserved_effects_and_malformed_device():
             await inspect_device(http, device())
 
 
-async def test_priority_expiry_corrections_and_target_preview(monkeypatch):
+async def test_priority_expiry_and_corrections(monkeypatch):
     async with httpx.AsyncClient() as http:
         worker = DeviceWorker(device(), http, EventBus(), lambda: {})
         view = {"phase": "ready", "available": True}
@@ -999,17 +1099,12 @@ async def test_priority_expiry_corrections_and_target_preview(monkeypatch):
         old.received_at = datetime.now(UTC) - timedelta(seconds=10)
         worker.accept(old)
         assert not worker.overlays
-        worker.preview = (future + 1, Preview(target_id="ring", phase="ready"))
-        assert worker.desired({"phase": "waiting", "available": False})["seg"][0]["col"] == [
-            [0, 255, 0]
-        ]
-        worker.preview = None
         assert worker.desired({"phase": "waiting", "available": False})["seg"][0]["col"] == [
             [255, 0, 0]
         ]
 
 
-async def test_worker_isolation_preview_expiry_and_shutdown(tmp_path):
+async def test_worker_isolation_preview_restoration_and_shutdown(tmp_path):
     sent = []
     blocked = asyncio.Event()
 
@@ -1035,7 +1130,10 @@ async def test_worker_isolation_preview_expiry_and_shutdown(tmp_path):
             await until(lambda: bool(sent))
             assert sent[-1]["seg"][0]["col"] == [[255, 0, 0]]
             result = await service.test("board", Preview(target_id="ring", duration=0.5))
-            assert result["applied"] and sent[-1]["seg"][0]["col"] == [[0, 255, 0]]
+            assert result["applied"] and result["restored"]
+            assert sent[-2]["seg"][0]["frz"] is False
+            assert any(body["seg"][0].get("col") == [[0, 255, 0]] for body in sent)
+            assert sent[-1]["seg"][0]["col"] == [[255, 0, 0]]
             view["phase"] = "takeout"
             await until(lambda: sent[-1]["seg"][0]["col"] == [[255, 255, 0]])
             bus.publish("core", "match_win", {"player": {"is_local": True}}, kind="normalized")
@@ -1065,7 +1163,9 @@ def test_headless_api_config_probe_cli_and_restart(settings, capsys, tmp_path):
         assert requests == []  # Saving disabled configuration never contacts hardware.
         result = client.post("/api/wled/board/probe", json={})
         assert result.status_code == 200 and result.json()["segments"][1]["length"] == 128
-        assert client.post("/api/wled/board/test", json={"target_id": "ring"}).status_code == 409
+        assert client.post(
+            "/api/wled/board/test", json={"target_id": "ring", "duration": 0.5}
+        ).json()["restored"]
         assert (
             client.put(
                 "/api/wled", json=values, headers={"Origin": "https://other.test"}
@@ -1081,7 +1181,7 @@ def test_headless_api_config_probe_cli_and_restart(settings, capsys, tmp_path):
         path.write_text(json.dumps(values), encoding="utf-8")
         execute(parser().parse_args(["wled", "config", "--file", str(path)]), client)
         assert json.loads(capsys.readouterr().out) == values
-        execute(parser().parse_args(["wled", "disable", "board"]), client)
+        execute(parser().parse_args(["wled", "disable", "board", "--json"]), client)
         assert json.loads(capsys.readouterr().out)["saved"]
         with pytest.raises(ControlError, match="Unknown"):
             execute(parser().parse_args(["wled", "enable", "missing"]), client)
@@ -1103,7 +1203,7 @@ def test_integration_switch_preserves_devices_and_device_edits_preserve_switch(s
         assert client.get("/api/wled").json() == values
         assert client.get("/api/wled/status").json()["enabled"] is True
 
-        execute(parser().parse_args(["wled", "disable"]), client)
+        execute(parser().parse_args(["wled", "disable", "--json"]), client)
         assert json.loads(capsys.readouterr().out)["saved"]
         values["enabled"] = False
         assert client.get("/api/wled").json() == values
@@ -1112,7 +1212,7 @@ def test_integration_switch_preserves_devices_and_device_edits_preserve_switch(s
         values["devices"][0]["name"] = "Updated controller"
         assert client.patch("/api/wled", json={"devices": values["devices"]}).status_code == 200
         assert client.get("/api/wled").json() == values
-        execute(parser().parse_args(["wled", "enable"]), client)
+        execute(parser().parse_args(["wled", "enable", "--json"]), client)
         assert json.loads(capsys.readouterr().out)["saved"]
         values["enabled"] = True
 
@@ -1255,7 +1355,7 @@ async def test_rejected_device_commands_are_not_successful(response):
             await request(http, device(), "/json/state", {"seg": []})
 
 
-async def test_disable_during_preview_clears_lights_and_workers(tmp_path):
+async def test_disable_after_preview_clears_lights_and_workers(tmp_path):
     sent = []
 
     def transport(request):
@@ -1272,8 +1372,9 @@ async def test_disable_during_preview_clears_lights_and_workers(tmp_path):
         await service.configure(WLEDConfig(enabled=True, devices=[device()]))
         try:
             await until(lambda: bool(sent))
-            await service.test("board", Preview(target_id="ring"))
-            assert sent[-1]["seg"][0]["col"] == [[0, 255, 0]]
+            await service.test("board", Preview(target_id="ring", duration=0.5))
+            assert any(body["seg"][0].get("col") == [[0, 255, 0]] for body in sent)
+            assert sent[-1]["seg"][0]["col"] == [[32, 32, 32]]
             await service.configure(WLEDConfig(enabled=False, devices=[device()]))
             assert sent[-1]["seg"][0]["col"] == [[255, 0, 0]]
             assert not service.tasks and not bus.normalized_queues
@@ -1426,7 +1527,7 @@ def test_discovery_api_cli_without_ui_or_enabling_lights(settings, monkeypatch, 
     monkeypatch.setattr(wled, "discover_devices", discover)
     settings.ui_enabled = False
     with TestClient(create_app(settings)) as client:
-        execute(parser().parse_args(["wled", "discover"]), client)
+        execute(parser().parse_args(["wled", "discover", "--json"]), client)
         assert json.loads(capsys.readouterr().out) == {"devices": found}
         assert client.get("/api/wled").json() == WLEDConfig().model_dump(mode="json")
         assert not (settings.data_dir / "wled.json").exists()
