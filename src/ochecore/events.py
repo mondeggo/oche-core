@@ -480,6 +480,8 @@ class EventNormalizer:
         )
         if self.calibrating:
             return {**result, "reason": "Board is calibrating"}
+        if self.editing:
+            return {**result, "reason": "Editing score"}
         completed = turn and (
             len(turn.throws) == 3
             or turn.busted
@@ -694,27 +696,36 @@ class EventNormalizer:
         previous = self.frame
         current = frame.turns[0] if frame.turns else None
         if silent:
-            for turn in frame.turns:
+            for turn in reversed(frame.turns):
                 key = self._key(frame, turn)
                 self._store(key, turn)
                 for dart in turn.throws:
                     self._remember(("throw", *key, dart.id))
                 self._outcomes(raw, frame, turn, silent=True, current=turn is current)
         else:
+            # Refresh recent history without treating edited/backfilled darts as live throws.
+            # Leave one cache slot for the current visit.
+            for turn in reversed(frame.turns[1:256]):
+                self._darts(raw, frame, turn, historical=True)
             if previous and previous.turns:
                 old_turn = previous.turns[0]
-                if current is None or self._key(previous, old_turn) != self._key(frame, current):
+                old_key = self._key(previous, old_turn)
+                if current is None or old_key != self._key(frame, current):
                     forward = current is not None and self._key(frame, current) not in self.turns
+                    old_turn = self.turns.get(old_key, old_turn)
                     if old_turn.throws and forward:
+                        context_frame = (
+                            frame if old_key[:3] == (frame.id, frame.set, frame.leg) else previous
+                        )
                         self._emit(
                             "turn_end",
                             raw,
                             {
-                                **self._context(previous, old_turn),
+                                **self._context(context_frame, old_turn),
                                 "score": old_turn.points,
                                 "busted": old_turn.busted,
                             },
-                            self._key(previous, old_turn),
+                            old_key,
                         )
             if previous and frame.players[frame.player].id != previous.players[previous.player].id:
                 self._emit("player_changed", raw, self._context(frame))
@@ -736,13 +747,21 @@ class EventNormalizer:
         self.synchronized = True
         self.state_valid = True
 
-    def _darts(self, raw: Event, frame: MatchFrame, turn: Turn) -> None:
+    def _darts(self, raw: Event, frame: MatchFrame, turn: Turn, historical: bool = False) -> None:
         key = self._key(frame, turn)
         old = self.turns.get(key)
+        if historical and old is None:
+            self._store(key, turn)
+            for dart in turn.throws:
+                self._remember(("throw", *key, dart.id))
+            self._outcomes(raw, frame, turn, silent=True, current=False)
+            return
         old_darts = {dart.id: dart for dart in old.throws} if old else {}
         new_ids = {dart.id for dart in turn.throws}
         replacements = set()
         context = self._context(frame, turn)
+        if historical:
+            context["historical"] = True
         for position, dart in enumerate(turn.throws, 1):
             before = old_darts.get(dart.id)
             if before is None and old and position <= len(old.throws):
@@ -757,6 +776,9 @@ class EventNormalizer:
                         "throw_corrected", raw, {**data, "previous_dart": before.public(position)}
                     )
                 self._remember(("throw", *key, dart.id))
+            elif historical:
+                restored = not self._remember(("throw", *key, dart.id))
+                self._emit("throw_corrected", raw, {**data, "restored": restored})
             elif self._remember(("throw", *key, dart.id)):
                 self.takeout_phase = None
                 self.takeout_context = None
@@ -789,15 +811,21 @@ class EventNormalizer:
         if won:
             winner = frame.game_winner if frame.game_winner >= 0 else frame.winner
             win_data = {**self._context(frame, turn, winner), "score": turn.points}
-            win_key = (frame.id, frame.set, frame.leg, last_dart)
-            if frame.variant in {"X01", "Random Checkout"}:
-                self._emit("checkout", raw, win_data, win_key, silent)
-            self._emit("leg_win", raw, win_data, win_key, silent)
-            if frame.winner >= 0:
+            previous = self.frame
+            leg_was_won = (
+                previous
+                and (previous.id, previous.set, previous.leg) == (frame.id, frame.set, frame.leg)
+                and (previous.game_winner >= 0 or previous.winner >= 0)
+            )
+            if not leg_was_won:
+                if frame.variant in {"X01", "Random Checkout"}:
+                    self._emit("checkout", raw, win_data, silent=silent)
+                self._emit("leg_win", raw, win_data, silent=silent)
+            match_was_won = previous and previous.id == frame.id and previous.winner >= 0
+            if frame.winner >= 0 and not match_was_won:
                 self._emit(
                     "match_win",
                     raw,
                     {**win_data, **self._context(frame, turn, frame.winner)},
-                    win_key,
-                    silent,
+                    silent=silent,
                 )

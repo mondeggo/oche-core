@@ -223,6 +223,121 @@ def test_newest_turn_is_first_and_locality_uses_board_not_account(frame, replay)
     assert replay(frame)[0].data["player"]["is_local"] is False
 
 
+@pytest.mark.parametrize("replace_id", [False, True])
+def test_previous_visit_correction_updates_cache_without_replaying_throws(
+    frame, replay, replace_id
+):
+    add_dart(frame)
+    replay(frame)
+    next_turn(frame)
+    replay(frame)
+    old_turn = frame["turns"][1]
+    old_turn["throws"][0] = dart("replacement" if replace_id else "dart-1", 20, 1)
+    old_turn["points"] = 20
+    frame["gameScores"][0] = 481
+    events = replay(frame)
+    assert names(events) == ["throw_corrected"]
+    assert events[0].data["historical"] is True
+    assert events[0].data["turn_id"] == "visit-1"
+    assert events[0].data["player"]["id"] == "local-player"
+    assert events[0].data["previous_dart"]["points"] == 60
+    assert events[0].data["dart"]["points"] == 20
+    assert events[0].data["remaining"] == 481
+    assert replay(frame) == []
+    # Returning to the corrected visit uses its updated baseline.
+    frame["turns"].pop(0)
+    frame["player"] = 0
+    assert names(replay(frame)) == ["player_changed"]
+
+
+def test_previous_visit_removal_and_addition_do_not_change_live_readiness(frame, replay):
+    add_dart(frame)
+    replay(frame)
+    next_turn(frame, player=0)
+    replay(frame)
+    replay({"status": "Throw", "numThrows": 0}, "board.state")
+    old_turn = frame["turns"][1]
+    old_turn["throws"] = []
+    old_turn["points"] = 0
+    removed = replay(frame)
+    assert names(removed) == ["throw_removed"]
+    assert removed[0].data["historical"] is True
+    old_turn["throws"] = [dart("added-later")]
+    old_turn["points"] = 60
+    added = replay(frame)
+    assert names(added) == ["throw_corrected"]
+    assert added[0].data["historical"] is True
+    assert added[0].data["restored"] is False
+    assert replay.normalizer.current_state(True)["phase"] == "ready"
+    assert replay(frame) == []
+
+
+def test_backfilled_visit_darts_are_corrections_and_ending_uses_updated_total(frame, replay):
+    add_dart(frame)
+    replay(frame)
+    next_turn(frame)
+    old_turn = frame["turns"][1]
+    old_turn["throws"].extend([dart("late-dart-2"), dart("late-dart-3")])
+    old_turn["points"] = 180
+    frame["gameScores"][0] = 321
+    events = replay(frame)
+    assert names(events) == [
+        "throw_corrected",
+        "throw_corrected",
+        "turn_end",
+        "player_changed",
+        "turn_started",
+    ]
+    assert all(event.data["historical"] for event in events[:2])
+    assert events[2].data["score"] == 180
+    assert events[2].data["remaining"] == 321
+    assert replay(frame) == []
+
+
+def test_newly_discovered_history_is_silent_but_later_corrections_are_reported(frame, replay):
+    frame["turns"].append(
+        {
+            "id": "older-visit",
+            "playerId": "remote-player",
+            "points": 60,
+            "throws": [dart("older-dart")],
+            "finishedAt": "2026-10-02T12:00:00Z",
+        }
+    )
+    assert replay(frame) == []
+    frame["turns"][1]["throws"][0] = dart("older-dart", 19, 1)
+    frame["turns"][1]["points"] = 19
+    assert names(replay(frame)) == ["throw_corrected"]
+    assert replay(frame) == []
+
+
+@pytest.mark.parametrize("snapshot", [False, True])
+def test_history_changes_during_resync_establish_silent_baseline(frame, replay, snapshot):
+    add_dart(frame)
+    replay(frame)
+    next_turn(frame)
+    replay(frame)
+    replay.normalizer.resync()
+    frame["turns"][1]["throws"][0] = dart("changed-offline", 19, 1)
+    frame["turns"][1]["points"] = 19
+    assert replay(frame, snapshot=snapshot) == []
+    assert replay(frame) == []
+    frame["turns"][1]["throws"][0] = dart("changed-offline", 5, 1)
+    assert names(replay(frame)) == ["throw_corrected"]
+
+
+def test_long_history_keeps_current_visit_silent_after_snapshot(frame, replay):
+    frame["turns"].extend(
+        {"id": f"older-visit-{index}", "playerId": "local-player", "points": 0, "throws": []}
+        for index in range(300)
+    )
+    assert replay(frame, snapshot=True) == []
+    assert replay(frame) == []
+    add_dart(frame)
+    assert names(replay(frame)) == ["throw"]
+    assert replay(frame) == []
+
+
 def test_undo_to_previous_visit_does_not_reannounce_darts_or_end_undone_visit(frame, replay):
     add_dart(frame)
     replay(frame)
@@ -273,6 +388,41 @@ def test_winner_zero_checkout_and_repeated_finish(frame, replay, match_won):
     frame["turns"][0]["finishedAt"] = "2026-10-02T12:00:00Z"
     assert replay(frame) == []
     frame["turns"][0]["throws"][0]["segment"]["bed"] = "Double"
+    assert names(replay(frame)) == ["throw_corrected"]
+    frame["turns"][0]["throws"][0]["id"] = "corrected-winning-dart"
+    assert names(replay(frame)) == ["throw_corrected"]
+    assert replay(frame) == []
+
+
+def test_victory_after_actual_undo_is_reported_even_when_same_dart_is_restored(frame, replay):
+    add_dart(frame, dart("winning-dart", 20, 2))
+    frame["gameWinner"] = frame["winner"] = 0
+    replay(frame)
+    won = deepcopy(frame)
+    frame["gameWinner"] = frame["winner"] = -1
+    frame["turns"][0]["throws"] = []
+    assert names(replay(frame)) == ["throw_removed"]
+    events = replay(won)
+    assert names(events) == ["throw_corrected", "checkout", "leg_win", "match_win"]
+    assert events[0].data["restored"] is True
+    assert replay(won) == []
+
+
+def test_match_victory_can_follow_leg_victory_without_repeating_leg(frame, replay):
+    add_dart(frame, dart("winning-dart", 20, 2))
+    frame["gameWinner"] = 0
+    replay(frame)
+    frame["winner"] = 0
+    assert names(replay(frame)) == ["match_win"]
+
+
+@pytest.mark.parametrize("snapshot", [False, True])
+def test_winning_snapshot_then_dart_replacement_never_replays_victory(frame, replay, snapshot):
+    add_dart(frame, dart("winning-dart", 20, 2))
+    frame["gameWinner"] = frame["winner"] = 0
+    replay.normalizer.resync()
+    assert replay(frame, snapshot=snapshot) == []
+    frame["turns"][0]["throws"][0]["id"] = "corrected-winning-dart"
     assert names(replay(frame)) == ["throw_corrected"]
 
 
@@ -385,3 +535,30 @@ def test_turn_context_for_solo_targets_and_partial_editing(frame, replay):
     assert replay({"id": MATCH_ID, "activated": -1})[0].data["editing"] is False
     add_dart(frame)
     assert replay(frame)[0].data["editing"] is False
+
+
+@pytest.mark.parametrize("completed", [False, True])
+def test_editing_overrides_ready_or_takeout_until_editing_finishes(frame, replay, completed):
+    if completed:
+        for _ in range(3):
+            add_dart(frame)
+        replay(frame)
+    replay({"status": "Takeout" if completed else "Throw"}, "board.state")
+    phase = "takeout" if completed else "ready"
+    assert replay.normalizer.current_state(True)["phase"] == phase
+    assert names(replay({"id": MATCH_ID, "activated": 0})) == ["match_editing"]
+    view = replay.normalizer.current_state(True)
+    assert view["editing"] is True
+    assert view["phase"] == "waiting"
+    assert view["reason"] == "Editing score"
+    assert view["remaining"] == frame["gameScores"][0]
+    replay({"id": MATCH_ID, "activated": -1})
+    assert replay.normalizer.current_state(True)["phase"] == phase
+
+
+def test_editing_snapshot_is_silent_and_never_shows_ready(frame, replay):
+    frame["activated"] = 0
+    assert replay(frame, snapshot=True) == []
+    replay({"status": "Throw"}, "board.state")
+    assert replay.normalizer.current_state(True)["phase"] == "waiting"
+    assert replay.normalizer.current_state(True)["reason"] == "Editing score"
