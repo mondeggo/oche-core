@@ -27,7 +27,7 @@ def test_cli_configuration_uses_headless_api_and_preserves_locked_fields(setting
         )
         with pytest.raises(ControlError, match="managed"):
             execute(parser().parse_args(["config", "--client-id", "another"]), client)
-        with pytest.raises(ControlError, match="422"):
+        with pytest.raises(ControlError, match="board_id"):
             execute(parser().parse_args(["config", "--board-id", "invalid"]), client)
         assert client.get("/api/config").json()["board_id"] == BOARD_ID
         execute(parser().parse_args(["config", "--board-id="]), client)
@@ -82,7 +82,7 @@ def test_cli_login_and_session_lifecycle_without_ui(settings, monkeypatch, capsy
 
     if result == "approved":
         with TestClient(create_app(settings)) as client:
-            execute(parser().parse_args(["status"]), client)
+            execute(parser().parse_args(["status", "--json"]), client)
             status = json.loads(capsys.readouterr().out)
             assert status["auth"]["state"] == "authenticated"
             assert "private-" not in json.dumps(status)
@@ -180,7 +180,224 @@ def test_cli_lists_account_boards_without_ui(settings, capsys):
                 "expires_in": 900,
             }
         )
-        assert execute(parser().parse_args(["boards"]), client) == 0
+        assert execute(parser().parse_args(["boards", "--json"]), client) == 0
         result = json.loads(capsys.readouterr().out)
         assert result["boards"] == [{"id": BOARD_ID, "name": "Home", "online": True}]
         assert result["selected_board_id"] is None
+
+
+def test_cli_login_json_emits_one_document_with_instructions_on_stderr(monkeypatch, capsys):
+    monkeypatch.setattr("ochecore.cli.time.sleep", lambda _: None)
+
+    def handler(request):
+        if request.method == "POST":
+            return httpx.Response(
+                200,
+                json={
+                    "state": "awaiting_authorization",
+                    "device": {
+                        "verification_uri": "https://example.test/link",
+                        "user_code": "TEST",
+                    },
+                },
+            )
+        return httpx.Response(200, json={"auth": {"state": "authenticated"}})
+
+    with httpx.Client(
+        base_url="http://localhost", transport=httpx.MockTransport(handler)
+    ) as client:
+        assert execute(parser().parse_args(["login", "--json"]), client) == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out) == {"state": "authenticated"}
+    assert "https://example.test/link" in output.err
+    assert "TEST" in output.err
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--json", "status"],
+        ["status", "--json"],
+        ["--json", "wled", "devices", "list"],
+        ["wled", "--json", "devices", "list"],
+        ["wled", "devices", "list", "--json"],
+    ],
+)
+def test_cli_json_flag_can_precede_or_follow_subcommands(arguments):
+    assert parser().parse_args(arguments).json is True
+
+
+def test_cli_service_url_and_wled_url_are_unambiguous():
+    args = parser().parse_args(
+        [
+            "--url",
+            "http://server:9180",
+            "wled",
+            "devices",
+            "add",
+            "board",
+            "--url",
+            "http://wled.test",
+        ]
+    )
+    assert args.url == "http://server:9180"
+    assert args.device_url == "http://wled.test"
+    assert (
+        parser().parse_args(["status", "--url", "http://server:9180"]).url == "http://server:9180"
+    )
+
+
+def test_cli_device_toggle_sends_only_atomic_patch(capsys):
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path, json.loads(request.content)))
+        return httpx.Response(200, json={"saved": True})
+
+    with httpx.Client(
+        base_url="http://localhost", transport=httpx.MockTransport(handler)
+    ) as client:
+        execute(parser().parse_args(["wled", "disable", "board"]), client)
+    assert calls == [("PATCH", "/api/wled/devices/board", {"enabled": False})]
+    assert json.loads(capsys.readouterr().out)["saved"]
+
+
+def test_cli_reports_validation_fields_and_file_errors(settings, tmp_path):
+    with TestClient(create_app(settings)) as client:
+        with pytest.raises(ControlError, match="board_id"):
+            execute(parser().parse_args(["config", "--board-id", "invalid"]), client)
+        path = tmp_path / "caller.json"
+        path.write_text('{"volume":60}', encoding="utf-8")
+        with pytest.raises(ControlError, match="volume.*less than or equal to 1"):
+            execute(parser().parse_args(["caller", "config", "--file", str(path)]), client)
+        assert client.get("/api/caller").json()["volume"] == 0.6
+
+
+@pytest.mark.parametrize(
+    "arguments,limits",
+    [
+        (["caller", "config", "--volume", "60"], "between 0 and 1"),
+        (["caller", "config", "--volume", "nan"], "between 0 and 1"),
+        (["wled", "test", "board", "--target", "ring", "--duration", "60"], "between 0.5 and 10"),
+    ],
+)
+def test_cli_rejects_out_of_range_values_before_contacting_service(arguments, limits, capsys):
+    with pytest.raises(SystemExit) as exc:
+        parser().parse_args(arguments)
+    assert exc.value.code == 2
+    assert limits in capsys.readouterr().err
+
+
+def test_cli_readable_status_and_doctor_are_read_only(settings, capsys):
+    with TestClient(create_app(settings)) as client:
+        execute(parser().parse_args(["status"]), client)
+        assert "Board: not selected" in capsys.readouterr().out
+        assert execute(parser().parse_args(["doctor", "--json"]), client) == 1
+        report = json.loads(capsys.readouterr().out)
+        assert not report["ready"]
+        assert any(
+            check["name"] == "Board" and "boards" in check["next_step"]
+            for check in report["checks"]
+        )
+        assert not (settings.data_dir / "connection.json").exists()
+        assert not (settings.data_dir / "wled.json").exists()
+        assert not (settings.data_dir / "caller.json").exists()
+
+
+def test_cli_add_device_list_targets_and_caller_flags(settings, capsys):
+    with TestClient(create_app(settings)) as client:
+        execute(
+            parser().parse_args(
+                [
+                    "wled",
+                    "devices",
+                    "add",
+                    "board",
+                    "--name",
+                    "Main board",
+                    "--url",
+                    "http://wled.test",
+                ]
+            ),
+            client,
+        )
+        assert "Saved Main board (board)" in capsys.readouterr().out
+        execute(parser().parse_args(["wled", "targets", "list", "board", "--json"]), client)
+        assert json.loads(capsys.readouterr().out) == []
+        execute(
+            parser().parse_args(
+                [
+                    "caller",
+                    "config",
+                    "--darts",
+                    "segment",
+                    "--local-only",
+                    "--no-include-bots",
+                    "--no-turn-totals",
+                    "--no-checkouts",
+                    "--no-players",
+                ]
+            ),
+            client,
+        )
+        config = json.loads(capsys.readouterr().out)
+        assert config["darts"] == "segment"
+        assert config["local_only"] is True
+        assert config["include_bots"] is False
+        assert config["turn_totals"] is False
+        assert config["checkouts"] is False
+        assert config["players"] is False
+
+
+def test_cli_debug_download_preserves_existing_files(tmp_path, capsys):
+    content = b'{"raw":{"event":"takeout"}}\n'
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path))
+        return httpx.Response(200, content=content)
+
+    output = tmp_path / "capture.jsonl"
+    args = parser().parse_args(["events", "debug", "download", "--output", str(output), "--json"])
+    with httpx.Client(
+        base_url="http://localhost", transport=httpx.MockTransport(handler)
+    ) as client:
+        execute(args, client)
+        assert output.read_bytes() == content
+        assert json.loads(capsys.readouterr().out)["saved"]
+        with pytest.raises(ControlError, match="already exists"):
+            execute(args, client)
+    assert calls == [("GET", "/api/events/debug/file")]
+    assert output.read_bytes() == content
+
+
+@pytest.mark.parametrize(
+    "arguments,expected",
+    [
+        (["wled", "status"], "Event automation: disabled"),
+        (["caller", "status"], "Voice: not selected (not ready)"),
+        (["game"], "Remaining: -  Visit: -"),
+        (["wled", "profiles"], "Default"),
+    ],
+)
+def test_cli_summaries_describe_unconfigured_state(settings, capsys, arguments, expected):
+    with TestClient(create_app(settings)) as client:
+        execute(parser().parse_args(arguments), client)
+    assert expected in capsys.readouterr().out
+
+
+def test_cli_failed_debug_download_does_not_leave_a_partial_capture(tmp_path):
+    class InterruptedStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b'{"raw":'
+            raise httpx.ReadError("connection interrupted")
+
+    output = tmp_path / "capture.jsonl"
+    args = parser().parse_args(["events", "debug", "download", "--output", str(output)])
+    with httpx.Client(
+        base_url="http://localhost",
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, stream=InterruptedStream())),
+    ) as client:
+        with pytest.raises(httpx.ReadError):
+            execute(args, client)
+    assert not output.exists()

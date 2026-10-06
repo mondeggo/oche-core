@@ -3,6 +3,7 @@
 import argparse
 import json
 import logging
+import math
 import os
 import sys
 import time
@@ -18,7 +19,7 @@ from websockets.sync.client import connect
 from ochecore import __version__
 from ochecore.config import Settings
 from ochecore.integrations.caller.service import CallerConfig
-from ochecore.integrations.wled.service import EffectName, WLEDConfig
+from ochecore.integrations.wled.service import Device, EffectName, WLEDConfig
 
 
 class ControlError(Exception):
@@ -26,7 +27,10 @@ class ControlError(Exception):
 
 
 def service_url(value: str) -> str:
-    parts = urlsplit(value)
+    try:
+        parts = urlsplit(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Invalid service address.") from exc
     if (
         parts.scheme not in {"http", "https"}
         or not parts.hostname
@@ -44,8 +48,42 @@ def service_url(value: str) -> str:
     return value.rstrip("/")
 
 
+def bounded_number(low: float, high: float):
+    def parse(value: str) -> float:
+        try:
+            number = float(value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError("Enter a number.") from exc
+        if not math.isfinite(number) or not low <= number <= high:
+            raise argparse.ArgumentTypeError(f"Use a number between {low:g} and {high:g}.")
+        return number
+
+    return parse
+
+
+def add_common_options(command: argparse.ArgumentParser) -> None:
+    command.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Print machine-readable JSON (event streams remain JSON lines).",
+    )
+    if "--url" not in command._option_string_actions:
+        command.add_argument(
+            "--url",
+            type=service_url,
+            default=argparse.SUPPRESS,
+            help="OcheCore control API origin; may also be set with OCHECORE_URL.",
+        )
+    for action in command._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for child in action.choices.values():
+                add_common_options(child)
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="Run and control the OcheCore headless service.")
+    root.set_defaults(json=False)
     root.add_argument("--version", action="version", version=f"OcheCore {__version__}")
     root.add_argument(
         "--url",
@@ -56,7 +94,8 @@ def parser() -> argparse.ArgumentParser:
     commands = root.add_subparsers(dest="command")
     serve = commands.add_parser("serve", help="Start the service (also the default command).")
     serve.add_argument("--no-ui", action="store_true", help="Disable web pages and static assets.")
-    commands.add_parser("status", help="Print connection status as JSON.")
+    commands.add_parser("status", help="Show connection status and the selected board.")
+    commands.add_parser("doctor", help="Check service, connection and integration readiness.")
     commands.add_parser("boards", help="List boards linked to the connected AutoDarts account.")
     config = commands.add_parser("config", help="Show configuration or update supplied fields.")
     config.add_argument("--client-id", help="OAuth application client ID.")
@@ -65,7 +104,6 @@ def parser() -> argparse.ArgumentParser:
     login.add_argument(
         "--no-wait", action="store_true", help="Exit while approval runs in the service."
     )
-    login.add_argument("--json", action="store_true", help="Print login details as JSON.")
     commands.add_parser("logout", help="Remove the service's saved AutoDarts session.")
     events = commands.add_parser("events", help="Print recent events as JSON.")
     event_mode = events.add_mutually_exclusive_group()
@@ -77,6 +115,13 @@ def parser() -> argparse.ArgumentParser:
         choices=["on", "off", "status"],
         help="Control raw-event recording to a JSONL file on the service.",
     )
+    event_actions = events.add_subparsers(dest="event_command")
+    debug = event_actions.add_parser("debug", help="Control and download raw debug recordings.")
+    debug_actions = debug.add_subparsers(dest="debug_command", required=True)
+    for name in ("on", "off", "status"):
+        debug_actions.add_parser(name)
+    download = debug_actions.add_parser("download", help="Download the latest stopped recording.")
+    download.add_argument("--output", type=Path, required=True, help="New local JSONL file path.")
     events.add_argument(
         "--raw", action="store_true", help="Show incoming AutoDarts frames instead of game events."
     )
@@ -85,6 +130,19 @@ def parser() -> argparse.ArgumentParser:
     actions = wled.add_subparsers(dest="wled_command", required=True)
     actions.add_parser("status", help="Show devices, errors and current game phase.")
     actions.add_parser("discover", help="Find reachable WLED controllers on the service's network.")
+    devices = actions.add_parser("devices", help="List or add WLED controllers.")
+    device_actions = devices.add_subparsers(dest="device_command")
+    device_actions.add_parser("list")
+    add_device = device_actions.add_parser(
+        "add", help="Save a controller without changing its lights."
+    )
+    add_device.add_argument("id", help="Unique ID, e.g. board.")
+    add_device.add_argument("--name", help="Display name; defaults to the ID.")
+    add_device.add_argument("--url", dest="device_url", required=True, help="WLED address.")
+    targets = actions.add_parser("targets", help="List saved lighting targets and their IDs.")
+    target_actions = targets.add_subparsers(dest="target_command", required=True)
+    list_targets = target_actions.add_parser("list")
+    list_targets.add_argument("device", help="Saved device ID.")
     profiles = actions.add_parser(
         "profiles", help="List, create, select or remove lighting profiles."
     )
@@ -114,7 +172,12 @@ def parser() -> argparse.ArgumentParser:
         "--phase", choices=["idle", "ready", "takeout", "waiting"], default="ready"
     )
     preview.add_argument("--value", type=int, help="Sample matrix score.")
-    preview.add_argument("--duration", type=float, default=3)
+    preview.add_argument(
+        "--duration",
+        type=bounded_number(0.5, 10),
+        default=3,
+        help="Preview duration in seconds, from 0.5 to 10 (default: 3).",
+    )
     preview.add_argument("--event", choices=EffectName.__args__)
     preview.add_argument(
         "--player", type=int, choices=range(1, 11), help="Preview a player colour."
@@ -123,12 +186,19 @@ def parser() -> argparse.ArgumentParser:
         power = actions.add_parser(name, help=f"Turn lights {name} without changing saved rules.")
         power.add_argument("device", nargs="?", help="Saved device ID; omit for all devices.")
     for name in ("enable", "disable"):
-        command = actions.add_parser(name, help=f"{name.capitalize()} WLED or a saved device.")
+        command = actions.add_parser(
+            name, help=f"{name.capitalize()} event automation; use on/off for light power."
+        )
         command.add_argument("device", nargs="?")
     caller = commands.add_parser("caller", help="Configure voices and control game announcements.")
     actions = caller.add_subparsers(dest="caller_command", required=True)
-    for name in ("status", "enable", "disable", "stop"):
-        actions.add_parser(name)
+    for name, help_text in {
+        "status": "Show selected voice, download state and audio output.",
+        "enable": "Enable automatic game announcements.",
+        "disable": "Disable announcements while keeping caller settings.",
+        "stop": "Stop current and queued sound; later events can play again.",
+    }.items():
+        actions.add_parser(name, help=help_text)
     voices = actions.add_parser("voices", help="List available and installed voices.")
     voices.add_argument("--language", help="Filter by language code, e.g. fr-FR.")
     install = actions.add_parser(
@@ -138,19 +208,40 @@ def parser() -> argparse.ArgumentParser:
     settings = actions.add_parser("config", help="Show or update caller settings.")
     settings.add_argument("--file", type=Path)
     settings.add_argument("--voice")
-    settings.add_argument("--volume", type=float)
+    settings.add_argument(
+        "--volume", type=bounded_number(0, 1), help="Volume from 0 (mute) to 1 (full)."
+    )
     settings.add_argument("--output", choices=["host", "browser", "both"])
+    settings.add_argument("--darts", choices=["auto", "segment", "score", "off"])
+    for name, help_text in {
+        "turn-totals": "Announce completed visit totals.",
+        "checkouts": "Announce checkout reminders.",
+        "players": "Announce player names.",
+        "include-bots": "Include bot players.",
+        "local-only": "Announce only players on the local board.",
+    }.items():
+        settings.add_argument(
+            f"--{name}", action=argparse.BooleanOptionalAction, default=None, help=help_text
+        )
     preview = actions.add_parser("test", help="Play a sample through the selected output.")
     preview.add_argument(
         "--call", choices=["score", "bust", "win", "checkout", "bull"], default="score"
     )
-    preview.add_argument("--score", type=int, default=180)
+    preview.add_argument("--score", type=int, default=180, help="Sample score from 0 to 180.")
+    add_common_options(root)
     return root
 
 
-def request(client, method: str, path: str, body: dict | None = None):
-    options = {"json": body or {}} if method != "GET" else {}
-    response = client.request(method, path, **options)
+def validation_message(errors: list[dict]) -> str:
+    messages = []
+    for error in errors:
+        field = ".".join(str(part) for part in error.get("loc", []) if part != "body")
+        message = error.get("msg", "Invalid value")
+        messages.append(f"{field}: {message}" if field else message)
+    return "; ".join(messages)
+
+
+def response_data(response):
     try:
         data = response.json()
     except ValueError as exc:
@@ -160,29 +251,253 @@ def request(client, method: str, path: str, body: dict | None = None):
         raise ControlError(
             detail
             if isinstance(detail, str)
+            else validation_message(detail)
+            if isinstance(detail, list)
             else f"Request rejected (HTTP {response.status_code})."
         )
     return data
+
+
+def request(client, method: str, path: str, body: dict | None = None):
+    options = {"json": body or {}} if method != "GET" else {}
+    return response_data(client.request(method, path, **options))
 
 
 def print_json(data) -> None:
     print(json.dumps(data, indent=2), flush=True)
 
 
+def print_table(headers: tuple[str, ...], rows: list[tuple]) -> None:
+    if not rows:
+        print("None configured.")
+        return
+    values = [headers, *(tuple(str(value) for value in row) for row in rows)]
+    widths = [max(len(row[index]) for row in values) for index in range(len(headers))]
+    for row in values:
+        print(
+            "  ".join(value.ljust(width) for value, width in zip(row, widths, strict=True)).rstrip()
+        )
+
+
+def state_label(value) -> str:
+    return "yes" if value is True else "no" if value is False else "unknown"
+
+
+def print_summary(data, args, kind: str) -> None:
+    if args.json:
+        print_json(data)
+        return
+    if kind == "status":
+        auth, cloud = data["auth"], data["cloud"]
+        print(f"Account: {auth['state']}\nCloud: {cloud['state']}")
+        print(f"Board: {cloud.get('board_id') or 'not selected'}")
+        print(f"Board online: {state_label(cloud.get('board_online'))}")
+        for section in (auth, cloud):
+            if section.get("error"):
+                print(f"Attention: {section['error']}")
+        if cloud.get("subscription_errors"):
+            print(f"Subscription errors: {len(cloud['subscription_errors'])}")
+        print("Use 'ochecore doctor' for setup checks and next steps.")
+    elif kind == "game":
+        print(f"Phase: {data.get('phase', 'unknown')}")
+        print(f"Reason: {data.get('reason') or '-'}")
+        player = data.get("player") or {}
+        print(f"Player: {player.get('name') or '-'}")
+        remaining = data.get("remaining")
+        visit = data.get("turn_score")
+        print(
+            f"Remaining: {remaining if remaining is not None else '-'}  "
+            f"Visit: {visit if visit is not None else '-'}"
+        )
+    elif kind == "boards":
+        print_table(
+            ("ID", "Name", "Online", "Selected"),
+            [
+                (
+                    board["id"],
+                    board["name"],
+                    state_label(board.get("online")),
+                    "*" if board["id"] == data.get("selected_board_id") else "",
+                )
+                for board in data["boards"]
+            ],
+        )
+    elif kind == "profiles":
+        print_table(
+            ("ID", "Name", "Active"),
+            [
+                (
+                    profile["id"],
+                    profile["name"],
+                    "*" if profile["id"] == data["active_profile"] else "",
+                )
+                for profile in data["profiles"]
+            ],
+        )
+    elif kind == "voices":
+        print_table(
+            ("ID", "Language", "Installed"),
+            [(voice["id"], voice["language"], state_label(voice["installed"])) for voice in data],
+        )
+    elif kind == "caller":
+        print(f"Announcements: {'enabled' if data['enabled'] else 'disabled'}")
+        print(
+            f"Voice: {data['voice'] or 'not selected'} "
+            f"({'ready' if data['installed'] else 'not ready'})"
+        )
+        print(f"Output: {data['output']}  Queued calls: {data['queued']}")
+        print(f"Download: {data['download'].get('state', 'idle')}")
+        if data.get("error"):
+            print(f"Attention: {data['error']}")
+    elif kind in {"wled", "devices", "discover"}:
+        if kind == "wled":
+            print(f"Event automation: {'enabled' if data['enabled'] else 'disabled'}")
+            print(
+                f"Profile: {data['active_profile']}  Phase: {data['game'].get('phase', 'unknown')}"
+            )
+            print_table(
+                ("ID", "Name", "Reachable", "Power", "Error"),
+                [
+                    (
+                        device["id"],
+                        device["name"],
+                        state_label(device.get("connected")),
+                        state_label(device.get("on")),
+                        device.get("error") or "-",
+                    )
+                    for device in data["devices"]
+                ],
+            )
+        else:
+            print_table(
+                ("ID", "Name", "Address"),
+                [
+                    (device.get("id", "-"), device["name"], device["url"])
+                    for device in data["devices"]
+                ],
+            )
+    elif kind == "targets":
+        print_table(
+            ("ID", "Name", "Mode", "Segment", "Enabled"),
+            [
+                (
+                    target["id"],
+                    target["name"],
+                    target["mode"],
+                    target["segment"],
+                    state_label(target["enabled"]),
+                )
+                for target in data
+            ],
+        )
+
+
+def doctor(client, args) -> int:
+    health = request(client, "GET", "/healthz")
+    status = request(client, "GET", "/api/status")
+    config = request(client, "GET", "/api/config")
+    wled = request(client, "GET", "/api/wled/status")
+    caller = request(client, "GET", "/api/caller/status")
+    checks = []
+
+    def check(name, ok, detail, next_step=""):
+        checks.append(
+            {"name": name, "ok": bool(ok), "detail": detail, "next_step": "" if ok else next_step}
+        )
+
+    check("Service", True, f"OcheCore {health['version']}")
+    check(
+        "Account",
+        status["auth"]["state"] == "authenticated",
+        status["auth"]["state"],
+        "Run ochecore login."
+        if config["client_id"]
+        else "Set an OAuth client ID in configuration.",
+    )
+    check(
+        "Board",
+        config["board_id"],
+        config["board_id"] or "Not selected",
+        "Run ochecore boards, then ochecore config --board-id ID.",
+    )
+    check(
+        "Cloud",
+        status["cloud"]["state"] == "connected",
+        status["cloud"]["state"],
+        status["cloud"].get("error")
+        or "Check account approval, board selection and network access.",
+    )
+    if config["board_id"]:
+        check(
+            "Board online",
+            status["cloud"].get("board_online") is True,
+            state_label(status["cloud"].get("board_online")),
+            "Start AutoDarts on the board computer and check its network connection.",
+        )
+    if wled["enabled"]:
+        check(
+            "WLED",
+            wled["devices"] and not wled.get("error"),
+            wled.get("error") or f"{len(wled['devices'])} saved device(s)",
+            "Run ochecore wled discover or ochecore wled devices add.",
+        )
+        for device in wled["devices"]:
+            if device["enabled"]:
+                check(
+                    f"WLED {device['name']}",
+                    device.get("connected"),
+                    device.get("error") or "Connection not checked"
+                    if not device.get("connected")
+                    else "Reachable",
+                    f"Run ochecore wled probe {device['id']}.",
+                )
+    if caller["enabled"]:
+        check(
+            "Caller voice",
+            caller["installed"] and not caller.get("error"),
+            caller.get("error") or caller["voice"] or "Not selected",
+            "Run ochecore caller voices, then ochecore caller install VOICE_ID.",
+        )
+        if caller["output"] in {"browser", "both"}:
+            check(
+                "Browser sound",
+                caller["browser_listeners"] > 0,
+                f"{caller['browser_listeners']} connected audio browser(s)",
+                "Open Caller in the UI and choose Enable sound here.",
+            )
+    ready = all(item["ok"] for item in checks)
+    if args.json:
+        print_json({"ready": ready, "checks": checks})
+    else:
+        for item in checks:
+            print(f"{'OK' if item['ok'] else 'ACTION'}  {item['name']}: {item['detail']}")
+            if item["next_step"]:
+                print(f"        {item['next_step']}")
+        print("Checks read saved status; lights and audio were not changed.")
+    return 0 if ready else 1
+
+
 def login(client, args) -> int:
     auth = request(client, "POST", "/api/auth/login")
-    if args.json:
-        print_json(auth)
-    elif auth.get("device"):
+    progress = sys.stderr if args.json else sys.stdout
+    if auth.get("device"):
         device = auth["device"]
-        print(f"Open: {device.get('verification_uri_complete') or device['verification_uri']}")
-        print(f"Code: {device['user_code']}", flush=True)
-    elif auth.get("state") == "authenticated":
-        print("AutoDarts account is authenticated.")
+        print(
+            f"Open: {device.get('verification_uri_complete') or device['verification_uri']}",
+            file=progress,
+        )
+        print(f"Code: {device['user_code']}", file=progress, flush=True)
     if args.no_wait or auth.get("state") == "authenticated":
+        if args.json:
+            print_json(auth)
+        elif auth.get("state") == "authenticated":
+            print("AutoDarts account is authenticated.")
         return 0
-    if not args.json:
-        print("Waiting for approval. Ctrl+C leaves approval running in the service.", flush=True)
+    print(
+        "Waiting for approval. Ctrl+C leaves approval running in the service.",
+        file=progress,
+        flush=True,
+    )
     while auth.get("state") == "awaiting_authorization":
         time.sleep(2)
         auth = request(client, "GET", "/api/status")["auth"]
@@ -214,9 +529,11 @@ def follow_events(url: str, raw: bool = False) -> None:
 
 def execute(args, client) -> int:
     if args.command == "status":
-        print_json(request(client, "GET", "/api/status"))
+        print_summary(request(client, "GET", "/api/status"), args, "status")
+    elif args.command == "doctor":
+        return doctor(client, args)
     elif args.command == "boards":
-        print_json(request(client, "GET", "/api/boards"))
+        print_summary(request(client, "GET", "/api/boards"), args, "boards")
     elif args.command == "config":
         config = request(client, "GET", "/api/config")
         updates = {
@@ -234,13 +551,18 @@ def execute(args, client) -> int:
     elif args.command == "logout":
         print_json(request(client, "POST", "/api/auth/logout"))
     elif args.command == "events":
-        if args.debug:
+        if args.event_command and (args.debug or args.follow or args.raw):
+            raise ControlError("Use either an events debug subcommand or the event stream flags.")
+        if args.event_command == "debug" and args.debug_command == "download":
+            download_debug(client, args)
+        elif args.debug or args.event_command == "debug":
+            action = args.debug if args.debug else args.debug_command
             print_json(
                 request(
                     client,
-                    "GET" if args.debug == "status" else "PUT",
+                    "GET" if action == "status" else "PUT",
                     "/api/events/debug",
-                    {"enabled": args.debug == "on"},
+                    {"enabled": action == "on"},
                 )
             )
         elif args.follow:
@@ -248,7 +570,7 @@ def execute(args, client) -> int:
         else:
             print_json(request(client, "GET", "/api/events/raw" if args.raw else "/api/events"))
     elif args.command == "game":
-        print_json(request(client, "GET", "/api/game"))
+        print_summary(request(client, "GET", "/api/game"), args, "game")
     elif args.command == "wled":
         execute_wled(args, client)
     elif args.command == "caller":
@@ -256,21 +578,72 @@ def execute(args, client) -> int:
     return 0
 
 
+def download_debug(client, args) -> None:
+    if args.output.exists():
+        raise ControlError("The output file already exists. Choose a new filename.")
+    with client.stream("GET", "/api/events/debug/file") as response:
+        if not response.is_success:
+            response.read()
+            response_data(response)
+        try:
+            output = args.output.open("xb")
+        except OSError as exc:
+            raise ControlError(f"Cannot create debug file: {exc}") from exc
+        try:
+            with output:
+                for chunk in response.iter_bytes():
+                    output.write(chunk)
+        except BaseException as exc:
+            args.output.unlink(missing_ok=True)
+            if isinstance(exc, OSError):
+                raise ControlError(f"Cannot save debug recording: {exc}") from exc
+            raise
+    if args.json:
+        print_json({"saved": True, "path": str(args.output.resolve())})
+    else:
+        print(f"Saved debug recording to {args.output.resolve()}")
+
+
 def execute_wled(args, client) -> None:
     command = args.wled_command
     if command == "status":
-        print_json(request(client, "GET", "/api/wled/status"))
+        print_summary(request(client, "GET", "/api/wled/status"), args, "wled")
     elif command == "discover":
-        print_json(request(client, "POST", "/api/wled/discover"))
+        print_summary(request(client, "POST", "/api/wled/discover"), args, "discover")
+    elif command == "devices":
+        if args.device_command == "add":
+            try:
+                device = Device(id=args.id, name=args.name or args.id, url=args.device_url)
+            except ValidationError as exc:
+                raise ControlError(validation_message(exc.errors())) from exc
+            result = request(client, "POST", "/api/wled/devices", device.model_dump(mode="json"))
+            if args.json:
+                print_json(result)
+            else:
+                print(
+                    f"Saved {device.name} ({device.id}). "
+                    f"Run 'ochecore wled probe {device.id}' to check it."
+                )
+                print("Add targets in WLED settings or import them with 'wled config --file'.")
+        else:
+            print_summary(request(client, "GET", "/api/wled"), args, "devices")
+    elif command == "targets":
+        config = request(client, "GET", "/api/wled")
+        device = next((item for item in config["devices"] if item["id"] == args.device), None)
+        if device is None:
+            raise ControlError("Unknown WLED device. Use 'wled devices' to list them.")
+        print_summary(device["targets"], args, "targets")
     elif command == "profiles":
         config = request(client, "GET", "/api/wled")
         action = args.profile_command
         if action in {None, "list"}:
-            print_json(
+            print_summary(
                 {
                     "active_profile": config["active_profile"],
                     "profiles": [{"id": p["id"], "name": p["name"]} for p in config["profiles"]],
-                }
+                },
+                args,
+                "profiles",
             )
         elif action == "create":
             print_json(
@@ -329,7 +702,9 @@ def execute_wled(args, client) -> None:
         if args.file:
             try:
                 config = WLEDConfig.model_validate_json(args.file.read_text(encoding="utf-8-sig"))
-            except (OSError, ValueError, ValidationError) as exc:
+            except ValidationError as exc:
+                raise ControlError(validation_message(exc.errors())) from exc
+            except (OSError, ValueError) as exc:
                 raise ControlError(
                     "Cannot load WLED configuration. Check the JSON file and fields."
                 ) from exc
@@ -337,14 +712,8 @@ def execute_wled(args, client) -> None:
         print_json(request(client, "GET", "/api/wled"))
     elif command in {"enable", "disable"}:
         update = {"enabled": command == "enable"}
-        if args.device:
-            config = request(client, "GET", "/api/wled")
-            target = next((d for d in config["devices"] if d["id"] == args.device), None)
-            if target is None:
-                raise ControlError("Unknown WLED device. Save it first.")
-            target["enabled"] = command == "enable"
-            update = {"devices": config["devices"]}
-        print_json(request(client, "PATCH", "/api/wled", update))
+        path = f"/api/wled/devices/{args.device}" if args.device else "/api/wled"
+        print_json(request(client, "PATCH", path, update))
     else:
         device = args.device
         if not device or any(
@@ -373,6 +742,8 @@ def execute_caller(args, client) -> None:
         if args.file:
             try:
                 config = CallerConfig.model_validate_json(args.file.read_text(encoding="utf-8-sig"))
+            except ValidationError as exc:
+                raise ControlError(validation_message(exc.errors())) from exc
             except (ValueError, OSError) as exc:
                 raise ControlError(
                     "Cannot load caller configuration. Check the JSON file."
@@ -380,7 +751,17 @@ def execute_caller(args, client) -> None:
             request(client, "PUT", "/api/caller", config.model_dump())
         updates = {
             key: getattr(args, key)
-            for key in ("voice", "volume", "output")
+            for key in (
+                "voice",
+                "volume",
+                "output",
+                "darts",
+                "turn_totals",
+                "checkouts",
+                "players",
+                "include_bots",
+                "local_only",
+            )
             if getattr(args, key) is not None
         }
         if updates:
@@ -390,7 +771,11 @@ def execute_caller(args, client) -> None:
         print_json(request(client, "PATCH", "/api/caller", {"enabled": command == "enable"}))
     elif command == "voices":
         voices = request(client, "GET", "/api/caller/voices")
-        print_json([v for v in voices if not args.language or v["language"] == args.language])
+        print_summary(
+            [v for v in voices if not args.language or v["language"] == args.language],
+            args,
+            "voices",
+        )
     elif command == "install":
         from ochecore.integrations.caller.voices import VOICES
 
@@ -401,10 +786,10 @@ def execute_caller(args, client) -> None:
         print_json(
             request(client, "POST", "/api/caller/test", {"call": args.call, "score": args.score})
         )
+    elif command == "status":
+        print_summary(request(client, "GET", "/api/caller/status"), args, "caller")
     else:
-        print_json(
-            request(client, "GET" if command == "status" else "POST", f"/api/caller/{command}")
-        )
+        print_json(request(client, "POST", f"/api/caller/{command}"))
 
 
 def run(argv=None) -> int:
@@ -426,6 +811,13 @@ def run(argv=None) -> int:
             return execute(args, client)
     except ControlError as exc:
         print(str(exc), file=sys.stderr)
+    except ValidationError as exc:
+        print(validation_message(exc.errors()), file=sys.stderr)
+    except httpx.TimeoutException:
+        print(
+            "OcheCore did not respond in time. The operation may still be running; check status.",
+            file=sys.stderr,
+        )
     except (httpx.HTTPError, OSError, WebSocketException):
         print(
             "Cannot reach OcheCore. Check that the service is running and --url is correct.",
