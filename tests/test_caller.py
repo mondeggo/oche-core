@@ -415,6 +415,124 @@ def test_corrupt_voice_manifest_reports_a_recoverable_error(tmp_path):
         library.resolve(VOICE, ["180"])
 
 
+@pytest.mark.parametrize("damage", ["index", "missing_index", "missing_clip", "empty_clip"])
+async def test_install_repairs_damaged_voice_cache(tmp_path, damage):
+    install_fixture(tmp_path)
+    pack = tmp_path / "voices" / VOICE
+    requests = []
+
+    def handle(request):
+        requests.append(str(request.url))
+        return httpx.Response(200, content=archive_bytes())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        library = VoiceLibrary(tmp_path / "voices", http)
+        assert library.installed(VOICE)
+        if damage == "index":
+            (pack / "index.json").write_text("{broken")
+        elif damage == "missing_index":
+            (pack / "index.json").unlink()
+        elif damage == "missing_clip":
+            (pack / "00000.wav").unlink()
+        else:
+            (pack / "00000.wav").write_bytes(b"")
+        assert not library.installed(VOICE)
+        assert not next(voice for voice in library.catalogue() if voice["id"] == VOICE)["installed"]
+        assert library.install(VOICE)["state"] == "downloading"
+        await library.task
+        assert library.download["state"] == "installed"
+        assert requests == [VOICES[VOICE]["url"]]
+        assert library.installed(VOICE)
+        assert library.resolve(VOICE, ["180"])[0] == "180"
+        assert library.clip_path(VOICE, "00000.wav").read_bytes() == wav_bytes()
+        assert VoiceLibrary(tmp_path / "voices", http).installed(VOICE)
+        assert not list(library.directory.glob(".install-*"))
+
+
+async def test_failed_voice_repair_preserves_cache_and_can_retry(tmp_path):
+    install_fixture(tmp_path)
+    pack = tmp_path / "voices" / VOICE
+    (pack / "index.json").write_text("{broken")
+    before = {path.name: path.read_bytes() for path in pack.iterdir()}
+    response = b"bad zip"
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, content=response))
+    ) as http:
+        library = VoiceLibrary(tmp_path / "voices", http)
+        library.install(VOICE)
+        await library.task
+        assert library.download["state"] == "error"
+        assert {path.name: path.read_bytes() for path in pack.iterdir()} == before
+        response = archive_bytes()
+        library.install(VOICE)
+        await library.task
+        assert library.download["state"] == "installed" and library.installed(VOICE)
+
+
+async def test_voice_repair_restores_previous_folder_when_replacement_fails(tmp_path, monkeypatch):
+    install_fixture(tmp_path)
+    pack = tmp_path / "voices" / VOICE
+    (pack / "index.json").write_text("{broken")
+    before = {path.name: path.read_bytes() for path in pack.iterdir()}
+    rename = Path.rename
+
+    def fail_replacement(path, target):
+        if path.name == "pack" and target == pack:
+            raise OSError("Destination unavailable")
+        return rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", fail_replacement)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, content=archive_bytes()))
+    ) as http:
+        library = VoiceLibrary(tmp_path / "voices", http)
+        library.install(VOICE)
+        await library.task
+        assert library.download["state"] == "error"
+        assert {path.name: path.read_bytes() for path in pack.iterdir()} == before
+        assert not list(library.directory.glob(".install-*"))
+
+
+async def test_cancelled_voice_repair_preserves_previous_folder(tmp_path):
+    install_fixture(tmp_path)
+    pack = tmp_path / "voices" / VOICE
+    (pack / "index.json").write_text("{broken")
+    before = {path.name: path.read_bytes() for path in pack.iterdir()}
+    requested = asyncio.Event()
+
+    async def handle(request):
+        requested.set()
+        await asyncio.Future()
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        library = VoiceLibrary(tmp_path / "voices", http)
+        library.install(VOICE)
+        await asyncio.wait_for(requested.wait(), 1)
+        await library.close()
+        assert library.download["state"] == "cancelled"
+        assert {path.name: path.read_bytes() for path in pack.iterdir()} == before
+        assert not list(library.directory.glob(".install-*"))
+
+
+def test_caller_install_endpoint_repairs_a_damaged_selected_voice(settings):
+    install_fixture(settings.data_dir)
+    pack = settings.data_dir / "voices" / VOICE
+    app = create_app(
+        settings,
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, content=archive_bytes())),
+    )
+    with TestClient(app) as client:
+        assert client.patch("/api/caller", json={"voice": VOICE}).status_code == 200
+        assert client.get("/api/caller/status").json()["installed"]
+        (pack / "index.json").write_text("{broken")
+        assert not client.get("/api/caller/status").json()["installed"]
+        response = client.post(f"/api/caller/voices/{VOICE}/install", json={})
+        assert response.status_code == 202
+        client.portal.call(lambda: app.state.runtime.caller.library.task)
+        assert client.get("/api/caller/status").json()["installed"]
+        assert client.get(f"/api/caller/audio/{VOICE}/00000.wav").content == wav_bytes()
+
+
 def test_caller_api_persistence_and_browser_audio_without_ui(settings):
     settings.ui_enabled = False
     install_fixture(settings.data_dir)

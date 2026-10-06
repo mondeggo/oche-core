@@ -4,6 +4,7 @@ import asyncio
 import csv
 import io
 import json
+import os
 import random
 import re
 import shutil
@@ -80,21 +81,30 @@ class VoiceLibrary:
         self.download: dict = {"state": "idle", "voice_id": None, "bytes": 0, "error": None}
         self.task: asyncio.Task | None = None
         self.cache: dict[str, dict] = {}
+        self.cache_versions: dict[str, tuple[int, int, int]] = {}
 
     def catalogue(self) -> list[dict]:
         return [{**voice, "installed": self.installed(voice["id"])} for voice in CATALOGUE]
 
     def installed(self, voice_id: str) -> bool:
-        return voice_id in VOICES and (self.directory / voice_id / "index.json").is_file()
+        try:
+            self.manifest(voice_id, verify_clips=True)
+        except ConnectionProblem:
+            return False
+        return True
 
-    def manifest(self, voice_id: str) -> dict:
-        if not self.installed(voice_id):
+    def manifest(self, voice_id: str, *, verify_clips: bool = False) -> dict:
+        pack = self.directory / voice_id
+        index = pack / "index.json"
+        if voice_id not in VOICES:
             raise ConnectionProblem("Install the selected voice first.")
-        if voice_id not in self.cache:
-            try:
-                manifest = json.loads(
-                    (self.directory / voice_id / "index.json").read_text(encoding="utf-8")
-                )
+        try:
+            if not index.is_file():
+                raise ConnectionProblem("Install the selected voice first.")
+            stat = index.stat()
+            version = (stat.st_mtime_ns, stat.st_size, pack.stat().st_mtime_ns)
+            if voice_id not in self.cache or self.cache_versions.get(voice_id) != version:
+                manifest = json.loads(index.read_text(encoding="utf-8"))
                 sounds = manifest.get("sounds") if isinstance(manifest, dict) else None
                 if (
                     not isinstance(sounds, dict)
@@ -112,8 +122,23 @@ class VoiceLibrary:
                 ):
                     raise ValueError("Invalid voice index")
                 self.cache[voice_id] = manifest
-            except (OSError, ValueError) as exc:
-                raise ConnectionProblem("The installed voice index cannot be read.") from exc
+                self.cache_versions[voice_id] = version
+                verify_clips = True
+            if verify_clips:
+                # Directory entries avoid repeatedly opening every clip during status checks.
+                with os.scandir(pack) as entries:
+                    available = {
+                        entry.name for entry in entries if entry.is_file() and entry.stat().st_size
+                    }
+                sounds = self.cache[voice_id]["sounds"]
+                if any(clip not in available for clips in sounds.values() for clip in clips):
+                    raise ValueError("Missing or empty voice clip")
+        except (OSError, ValueError) as exc:
+            self.cache.pop(voice_id, None)
+            self.cache_versions.pop(voice_id, None)
+            raise ConnectionProblem(
+                "The installed voice index or clips are damaged. Reinstall this voice."
+            ) from exc
         return self.cache[voice_id]
 
     def resolve(self, voice_id: str, alternatives: list[str]) -> tuple[str, str] | None:
@@ -125,11 +150,14 @@ class VoiceLibrary:
         return None
 
     def clip_path(self, voice_id: str, clip: str) -> Path:
-        if not self.installed(voice_id) or not re.fullmatch(r"\d{5}\.(mp3|wav)", clip):
+        if voice_id not in VOICES or not re.fullmatch(r"\d{5}\.(mp3|wav)", clip):
             raise ConnectionProblem("Unknown voice clip.")
+        self.manifest(voice_id)
         path = self.directory / voice_id / clip
-        if not path.is_file():
-            raise ConnectionProblem("Voice clip is missing.")
+        if not path.is_file() or path.stat().st_size == 0:
+            self.cache.pop(voice_id, None)
+            self.cache_versions.pop(voice_id, None)
+            raise ConnectionProblem("Voice clip is missing or empty. Reinstall this voice.")
         return path
 
     def install(self, voice_id: str) -> dict:
@@ -180,6 +208,9 @@ class VoiceLibrary:
             await worker
             raise
         self.cache = {key: value for key, value in self.cache.items() if key == voice_id}
+        self.cache_versions = {
+            key: value for key, value in self.cache_versions.items() if key == voice_id
+        }
 
     async def _install(self, voice_id: str) -> None:
         stage = None
@@ -211,8 +242,25 @@ class VoiceLibrary:
             except asyncio.CancelledError:
                 await worker
                 raise
-            pack.rename(self.directory / voice_id)
+            destination = self.directory / voice_id
+            if (
+                destination.resolve().parent != self.directory.resolve()
+                or destination.is_symlink()
+                or destination.is_junction()
+            ):
+                raise OSError("Unsafe voice cache directory")
+            # Keep a damaged cache until the replacement has been downloaded and indexed.
+            previous = stage / "previous"
+            if destination.exists():
+                destination.rename(previous)
+            try:
+                pack.rename(destination)
+            except OSError:
+                if previous.exists():
+                    previous.rename(destination)
+                raise
             self.cache[voice_id] = manifest
+            self.cache_versions.pop(voice_id, None)
             try:
                 await self.keep_only(voice_id)
             except OSError:
