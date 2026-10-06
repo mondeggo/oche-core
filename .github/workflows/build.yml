@@ -88,6 +88,8 @@ jobs:
           uv run --no-sync ruff format --check src tests scripts
       - name: Run tests
         run: uv run --no-sync pytest -q
+      - name: Check UI transport and event history
+        run: node --test tests/test_frontend.mjs
 
   python:
     name: Build Python packages

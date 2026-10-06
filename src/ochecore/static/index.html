@@ -7,10 +7,10 @@
     <title>Overview · OcheCore</title>
     <script src="/static/theme.js"></script>
     <link rel="stylesheet" href="/static/style.css" />
-    <script src="/static/app.js" defer></script>
+    <script type="module" src="/static/app.js"></script>
     <script src="/static/select.js" defer></script>
-    <script src="/static/wled.js" defer></script>
-    <script src="/static/caller.js" defer></script>
+    <script type="module" src="/static/wled.js"></script>
+    <script type="module" src="/static/caller.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -93,26 +93,35 @@
           </div>
           <p id="board-name" class="board-name">Choose your board</p>
           <p id="match" class="muted">Connect AutoDarts to get started.</p>
-          <a class="button primary" href="#autodarts">Manage connection</a>
+          <div class="board-controls">
+            <div>
+              <strong id="overview-phase" class="board-phase"
+                >Waiting for board</strong
+              >
+              <p id="overview-phase-reason" class="hint"></p>
+            </div>
+            <a class="button" href="#autodarts">Manage connection</a>
+          </div>
         </div>
         <dl class="metrics">
           <div class="panel">
-            <dt>AutoDarts account</dt>
-            <dd id="auth-state">—</dd>
-          </div>
-          <div class="panel">
-            <dt>Cloud connection</dt>
+            <dt>AutoDarts connection</dt>
             <dd id="cloud-state">—</dd>
+            <p class="hint">Account: <span id="auth-state">—</span></p>
+            <a href="#events"><span id="count">0</span> game events →</a>
           </div>
           <div class="panel">
-            <dt>Game events</dt>
-            <dd>
-              <span id="count">0</span>
-              <a href="#events">View events →</a>
-            </dd>
+            <dt>WLED</dt>
+            <dd id="overview-wled">Loading…</dd>
+            <a href="#wled">Lighting settings →</a>
+          </div>
+          <div class="panel">
+            <dt>Caller</dt>
+            <dd id="overview-caller">Loading…</dd>
+            <a href="#caller">Voice settings →</a>
           </div>
         </dl>
-        <div class="panel compact-panel">
+        <div id="setup-integrations" class="panel compact-panel">
           <div>
             <h2>Make it your setup</h2>
             <p class="muted">
@@ -286,7 +295,9 @@
           <div class="wled-profile-picker">
             <label for="wled-profile">Lighting profile</label>
             <select id="wled-profile" disabled></select>
-            <span class="hint">Your colours and effects, saved together.</span>
+            <span class="hint"
+              >Colours and effects only. Devices and zones are shared.</span
+            >
           </div>
           <details class="wled-profile-tools">
             <summary>Manage profiles</summary>
@@ -316,7 +327,8 @@
             </div>
             <p class="hint">
               Blank starts with lights off and no rules. Copy uses the current
-              profile. Both keep your devices and targets.
+              profile. Both keep your devices, lighting zones and automation
+              switches.
             </p>
           </details>
         </div>
@@ -348,6 +360,10 @@
           <div id="wled-device-editor" hidden>
             <div class="wled-controller-bar">
               <div id="wled-device-status" class="hint" role="status"></div>
+              <label class="check-label"
+                ><input id="wled-device-enabled" type="checkbox" /> Automatic
+                lighting</label
+              >
               <div
                 class="wled-power"
                 role="group"
@@ -376,10 +392,6 @@
                 </label>
               </div>
               <div class="actions">
-                <label class="check-label">
-                  <input id="wled-device-enabled" type="checkbox" />
-                  Automatic lighting
-                </label>
                 <button
                   id="wled-remove-device"
                   class="wled-remove"
@@ -389,6 +401,10 @@
                 </button>
               </div>
               <p id="wled-capabilities" class="hint"></p>
+              <p class="hint">
+                Automatic lighting follows game events. Lights off pauses the
+                controller without changing your saved rules.
+              </p>
             </details>
             <div id="wled-outputs-section" hidden>
               <div class="panel-heading">
@@ -407,7 +423,7 @@
                 <h2 id="wled-target-heading">Lighting rules</h2>
                 <p class="hint">Changes save automatically to your profile.</p>
               </div>
-              <button id="wled-add-target" type="button">Add target</button>
+              <button id="wled-add-target" type="button">Add zone</button>
             </div>
             <div id="wled-output-empty" class="wled-empty" role="status" hidden>
               <span class="wled-light-icon" aria-hidden="true">✧</span>
@@ -428,7 +444,7 @@
         </form>
         <template id="wled-target-template">
           <details class="wled-target" open>
-            <summary data-title>Lighting target</summary>
+            <summary data-title>Lighting zone</summary>
             <div class="wled-target-toolbar">
               <p data-output-note class="hint"></p>
               <label class="check-label"
@@ -437,7 +453,7 @@
               >
             </div>
             <details class="wled-target-setup">
-              <summary>Target setup</summary>
+              <summary>Zone setup</summary>
               <div class="wled-grid">
                 <label>
                   Name
@@ -483,9 +499,10 @@
                 within that segment.
               </p>
               <button data-remove type="button" class="wled-remove">
-                Remove target
+                Remove zone
               </button>
             </details>
+            <p data-geometry-warning class="error" role="status" hidden></p>
             <div
               class="wled-editor-tabs"
               role="tablist"
@@ -655,11 +672,18 @@
               >Listen on Peschi ↗</a
             >
             <button id="caller-retry" type="button" hidden>
-              Retry download
+              Repair voice download
             </button>
+            <button id="caller-save" class="primary" type="submit" disabled>
+              Download and use voice
+            </button>
+            <span id="caller-unsaved" class="hint" hidden
+              >Voice selection not applied</span
+            >
           </div>
           <p id="caller-download" class="hint" role="status">
-            Save to download the selected voice. Only the current pack is kept.
+            Download only the voice you choose. The previous pack stays until
+            the new one is ready.
           </p>
           <div class="form-grid">
             <label
@@ -722,10 +746,12 @@
             </p>
           </details>
           <div class="actions">
-            <button id="caller-save" class="primary" type="submit" disabled>
-              Save settings
+            <span id="caller-autosave" class="hint" role="status"
+              >Volume, output and announcements save automatically.</span
+            >
+            <button id="caller-settings-retry" type="button" hidden>
+              Retry saving
             </button>
-            <span id="caller-unsaved" class="hint" hidden>Unsaved changes</span>
           </div>
         </form>
         <div class="panel">
@@ -733,7 +759,10 @@
             <h2>Test sound</h2>
             <span id="caller-browser-state" class="hint"></span>
           </div>
-          <p class="hint">Tests use your saved voice and output settings.</p>
+          <p class="hint">
+            Tests use your saved voice and output settings. Stop sound cancels
+            current audio; future game calls remain enabled.
+          </p>
           <div class="actions">
             <button id="caller-browser" type="button">Enable sound here</button>
             <label
@@ -807,7 +836,21 @@
             Normalized game events, newest first. Open an event to see its
             payload.
           </p>
+          <div class="event-filters">
+            <label
+              >Filter type or channel<input
+                id="event-filter"
+                type="search"
+                placeholder="For example: throw or board.state"
+            /></label>
+            <button id="events-pause" type="button" aria-pressed="false">
+              Pause display
+            </button>
+          </div>
           <p id="event-error" class="error" role="status" hidden></p>
+          <p id="event-no-match" class="hint" hidden>
+            No entries match this filter.
+          </p>
           <div id="empty" class="empty-state">
             <h2>No game events yet</h2>
             <p class="muted">
@@ -815,7 +858,7 @@
             </p>
           </div>
           <div id="event-list"></div>
-          <p class="hint event-footer">
+          <p id="events-display-state" class="hint event-footer" role="status">
             Latest 100 entries from this service session. Updates automatically.
           </p>
         </div>

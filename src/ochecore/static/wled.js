@@ -1,6 +1,12 @@
+import { $, api, poll } from "./client.mjs";
+import { page, notice, setIntegrationEnabled } from "./app.js";
+
 /* WLED forms edit service configuration; device traffic stays in the headless core. */
 (() => {
   let configuration = null;
+  let configurationETag = null;
+  let statusETag = null;
+  let saveConflict = false;
   let selected = "";
   let changed = false;
   let working = false;
@@ -138,7 +144,17 @@
       saveError ||
       (saving ? "Saving…" : changed ? "Waiting to save…" : "All changes saved");
     $("wled-save-state").classList.toggle("error", !!saveError);
-    $("wled-retry").hidden = !saveError;
+    $("wled-save-state").dataset.state = saveError
+      ? "error"
+      : saving
+        ? "saving"
+        : changed
+          ? "pending"
+          : "saved";
+    $("wled-retry").hidden = !saveError || saveConflict;
+    $("wled-reload").textContent = saveConflict
+      ? "Reload saved settings"
+      : "Discard changes";
     $("wled-reload").hidden = !changed;
     $("wled-profile").disabled = !configuration || changed;
     $("wled-profile-create").disabled = $("wled-profile-blank").disabled =
@@ -171,14 +187,14 @@
   function markChanged() {
     changed = true;
     editRevision += 1;
-    saveError = "";
+    if (!saveConflict) saveError = "";
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveDraft, 500);
     buttons();
   }
 
   function saveDraft() {
-    if (!changed || working || saving) return;
+    if (!changed || working || saving || saveConflict) return;
     if (!form.checkValidity()) {
       saveError = "Complete the highlighted settings to save automatically.";
       buttons();
@@ -189,10 +205,16 @@
     const revision = editRevision;
     saving = (async () => {
       try {
-        await api("/api/wled", "PATCH", { devices });
-        const saved = await api("/api/wled");
-        configuration.profiles = saved.profiles;
-        configuration.active_profile = saved.active_profile;
+        const saved = await api(
+          "/api/wled",
+          "PATCH",
+          { devices },
+          {
+            etag: configurationETag,
+            metadata: true,
+          },
+        );
+        configurationETag = saved.etag;
         changed = revision !== editRevision;
         saveError = "";
         renderProfiles();
@@ -203,7 +225,11 @@
           if (item) option.textContent = item.name;
         }
       } catch (error) {
-        if (revision === editRevision)
+        saveConflict = error.status === 412;
+        if (saveConflict) {
+          saveError =
+            "Settings changed in another client. Your draft is kept here. Reload saved settings before editing again.";
+        } else if (revision === editRevision)
           saveError = `Not saved: ${error.message}`;
       } finally {
         saving = null;
@@ -296,7 +322,7 @@
         }
         addDevice(found.name, found.url);
         notice(
-          "Device added. Choose its lighting targets; changes save automatically.",
+          "Device added. Choose its lighting zones; changes save automatically.",
         );
       });
       row.append(description, add);
@@ -631,7 +657,7 @@
         button.type = "button";
         button.dataset.output = output ? String(output.id) : "all";
         const name = document.createElement("strong");
-        name.textContent = output ? outputLabel(output) : "All targets";
+        name.textContent = output ? outputLabel(output) : "All zones";
         const icon = document.createElement("span");
         icon.className = "wled-output-icon";
         icon.dataset.mode = output?.color_mode || "unknown";
@@ -645,7 +671,7 @@
         detail.className = "wled-output-detail";
         detail.textContent = output
           ? `${output.type_name} · ${output.length} ${output.length === 1 ? "LED" : "LEDs"}`
-          : "Every lighting target";
+          : "Every lighting zone";
         button.append(icon, name, kind, detail);
         button.addEventListener("click", () => {
           selectedOutputs.set(current.id, button.dataset.output);
@@ -693,11 +719,14 @@
         !!segment?.matrix;
       const geometryHint = root.querySelector("[data-matrix-layout]");
       geometryHint.hidden = !segment?.matrix;
-      geometryHint.textContent =
-        segment?.pixel_control_error ||
-        (segment?.matrix
-          ? `WLED layout: ${segment.matrix.width} × ${segment.matrix.height}. Use these dimensions with first LED 0. Wiring is managed in WLED.`
-          : "");
+      geometryHint.textContent = segment?.matrix
+        ? `WLED layout: ${segment.matrix.width} × ${segment.matrix.height}. Use these dimensions with first LED 0. Wiring is managed in WLED.`
+        : "";
+      const warning = root.querySelector("[data-geometry-warning]");
+      warning.hidden =
+        field(root, "mode").value === "segment" ||
+        !segment?.pixel_control_error;
+      warning.textContent = segment?.pixel_control_error || "";
       matrixField(root, "color").closest("label").hidden = [
         "white",
         "on_off",
@@ -709,8 +738,8 @@
       current.targets.length >= 16 ||
       (!!selectedOutput && !segments.length);
     $("wled-add-target").textContent = selectedOutput
-      ? `Add target on ${outputLabel(selectedOutput)}`
-      : "Add target";
+      ? `Add zone on ${outputLabel(selectedOutput)}`
+      : "Add zone";
     $("wled-output-empty").hidden =
       visible > 0 && (!selectedOutput || segments.length > 0);
     $("wled-target-heading").textContent = selectedOutput
@@ -835,7 +864,7 @@
       });
       field(root, "name").addEventListener("input", () => {
         root.querySelector("[data-title]").textContent =
-          field(root, "name").value || "Lighting target";
+          field(root, "name").value || "Lighting zone";
       });
       field(root, "mode").addEventListener("change", () => targetMode(root));
       root.querySelector("[data-remove]").addEventListener("click", () => {
@@ -966,9 +995,14 @@
       : "Check the connection to load outputs, segments and effects.";
   }
 
-  async function load() {
-    configuration = await api("/api/wled");
+  async function load(discard = false) {
+    const revision = editRevision;
+    const result = await api("/api/wled", "GET", undefined, { metadata: true });
+    if (!discard && (changed || revision !== editRevision)) return;
+    configuration = result.data;
+    configurationETag = result.etag;
     changed = false;
+    saveConflict = false;
     saveError = "";
     render();
   }
@@ -978,19 +1012,27 @@
     if (refreshing) return refreshing;
     refreshing = (async () => {
       try {
-        latestStatus = await api("/api/wled/status");
+        const response = await api("/api/wled/status", "GET", undefined, {
+          metadata: true,
+        });
+        latestStatus = response.data;
+        statusETag = response.etag;
         statusError = "";
         syncIntegration();
         if (page === "wled" && !configuration) await load();
         if (
+          page === "wled" &&
           configuration &&
           !changed &&
-          latestStatus.active_profile !== configuration.active_profile
+          !saving &&
+          (statusETag !== configurationETag ||
+            latestStatus.active_profile !== configuration.active_profile)
         )
           await load();
         renderStatus();
       } catch (error) {
         statusError = error.message;
+        $("overview-wled").textContent = "Unavailable";
       } finally {
         for (const id of ["wled-error", "wled-integration-error"]) {
           $(id).textContent = statusError || latestStatus?.error || "";
@@ -1009,6 +1051,15 @@
     $("wled-toggle").setAttribute("aria-checked", String(enabled));
     $("wled-settings").hidden = !enabled;
     setIntegrationEnabled("wled", enabled);
+    const devices = latestStatus.devices.filter((item) => item.enabled);
+    const connected = devices.filter((item) => item.connected).length;
+    $("overview-wled").textContent = !enabled
+      ? "Disabled"
+      : latestStatus.error
+        ? "Needs attention"
+        : !devices.length
+          ? "No automatic lighting"
+          : `${connected} / ${devices.length} connected`;
   }
 
   async function work(task) {
@@ -1057,7 +1108,12 @@
   $("wled-profile").addEventListener("change", () => {
     const id = $("wled-profile").value;
     work(async () => {
-      await api("/api/wled/profile", "PUT", { id });
+      await api(
+        "/api/wled/profile",
+        "PUT",
+        { id },
+        { etag: configurationETag },
+      );
       await load();
       notice("Lighting profile applied.");
     });
@@ -1066,7 +1122,12 @@
     const name = $("wled-profile-name").value.trim();
     if (!name) return $("wled-profile-name").focus();
     work(async () => {
-      await api("/api/wled/profiles", "POST", { name, source });
+      await api(
+        "/api/wled/profiles",
+        "POST",
+        { name, source },
+        { etag: configurationETag },
+      );
       $("wled-profile-name").value = "";
       await load();
       notice(
@@ -1084,7 +1145,12 @@
   );
   $("wled-profile-delete").addEventListener("click", () =>
     work(async () => {
-      await api(`/api/wled/profiles/${configuration.active_profile}`, "DELETE");
+      await api(
+        `/api/wled/profiles/${configuration.active_profile}`,
+        "DELETE",
+        undefined,
+        { etag: configurationETag },
+      );
       await load();
       notice("Profile removed.");
     }),
@@ -1092,7 +1158,16 @@
   $("wled-toggle").addEventListener("click", () => {
     const enabled = !latestStatus.enabled;
     work(async () => {
-      await api("/api/wled", "PATCH", { enabled });
+      const saved = await api(
+        "/api/wled",
+        "PATCH",
+        { enabled },
+        {
+          etag: configurationETag || statusETag,
+          metadata: true,
+        },
+      );
+      if (configuration) configurationETag = saved.etag;
       latestStatus.enabled = enabled;
       syncIntegration();
       notice(
@@ -1195,7 +1270,7 @@
     markChanged();
     render();
   });
-  $("wled-reload").addEventListener("click", () => work(load));
+  $("wled-reload").addEventListener("click", () => work(() => load(true)));
   $("wled-probe").addEventListener("click", () => {
     if (!$("wled-url").reportValidity()) return;
     collect();
@@ -1221,6 +1296,5 @@
     );
   }
   window.addEventListener("hashchange", refreshWled);
-  refreshWled();
-  setInterval(refreshWled, 2000);
+  poll(refreshWled);
 })();

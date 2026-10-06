@@ -124,7 +124,8 @@
       !(target instanceof HTMLSelectElement) ||
       target.disabled ||
       target.multiple ||
-      target.size > 1
+      target.size > 1 ||
+      target.options.length <= 8
     )
       return;
     if (

@@ -38,11 +38,14 @@ for ui_enabled in (True, False):
             for path in (
                 "/",
                 "/static/app.js",
+                "/static/client.mjs",
                 "/static/select.js",
                 "/static/wled.js",
                 "/static/style.css",
                 "/static/caller.js",
             ):
                 assert client.get(path).status_code == (200 if ui_enabled else 404), path
+            if ui_enabled:
+                assert "javascript" in client.get("/static/client.mjs").headers["content-type"]
 
 print("Installed CLI, voice catalogue, API and optional UI passed.")

@@ -1,3 +1,6 @@
+import { $, api, poll } from "./client.mjs";
+import { page, notice, setIntegrationEnabled } from "./app.js";
+
 /* The service selects calls. This optional player only plays the supplied local clips. */
 (() => {
   let voices = [],
@@ -6,6 +9,14 @@
     dirty = false,
     working = false,
     polling = null;
+  let voiceChanged = false,
+    settingsTimer = null,
+    settingsSave = null,
+    settingsError = "",
+    catalogueSignature = "",
+    catalogueVersion = "",
+    stateRevision = 0;
+  const pendingSettings = {};
   let context = null,
     socket = null,
     source = null,
@@ -47,10 +58,14 @@
   }
 
   function voiceState() {
+    $("caller-language").disabled = $("caller-voice").disabled = working;
     const voice = voices.find((v) => v.id === $("caller-voice").value);
     const download = current?.download;
     const installing = ["downloading", "installing"].includes(download?.state);
-    $("caller-retry").hidden = download?.state !== "error";
+    $("caller-retry").hidden =
+      !current?.voice ||
+      installing ||
+      (current.installed && download?.state !== "error");
     $("caller-retry").disabled = working || dirty;
     $("caller-preview").hidden = !voice;
     if (voice) $("caller-preview").href = voice.preview_url;
@@ -59,14 +74,26 @@
       : download?.error ||
         (voice?.installed
           ? "Installed locally. Ready to use."
-          : "Save to download this voice. The previous pack is removed when the new one is ready.");
+          : "Choose Download and use voice. The previous pack is removed when the new one is ready.");
     $("caller-save").disabled =
       working ||
-      !dirty ||
+      !voiceChanged ||
       !config ||
       !voice ||
       (installing && voice.id !== current.voice);
-    $("caller-unsaved").hidden = !dirty;
+    $("caller-save").textContent = voice?.installed
+      ? "Use voice"
+      : "Download and use voice";
+    $("caller-unsaved").hidden = !voiceChanged;
+    $("caller-autosave").textContent =
+      settingsError ||
+      (settingsSave
+        ? "Saving settings…"
+        : Object.keys(pendingSettings).length
+          ? "Waiting to save settings…"
+          : "Volume, output and announcements save automatically.");
+    $("caller-autosave").classList.toggle("error", !!settingsError);
+    $("caller-settings-retry").hidden = !settingsError;
     $("caller-test").disabled =
       working || !current?.enabled || !current?.installed || dirty;
   }
@@ -74,6 +101,9 @@
   function fill(value) {
     config = value;
     if (dirty) return;
+    const signature = JSON.stringify([voices, value]);
+    if (signature === catalogueSignature) return;
+    catalogueSignature = signature;
     const voice = voices.find((v) => v.id === value.voice);
     const previous = $("caller-language").value;
     $("caller-language").replaceChildren();
@@ -88,6 +118,38 @@
     flags.forEach((key) => {
       $("caller-" + key).checked = value[key];
     });
+  }
+
+  function saveSettings() {
+    if (working || settingsSave || !Object.keys(pendingSettings).length) return;
+    if (!$("caller-form").checkValidity()) {
+      settingsError = "Enter a volume from 0 to 100 to save your settings.";
+      voiceState();
+      return;
+    }
+    const values = { ...pendingSettings };
+    settingsSave = (async () => {
+      try {
+        await api("/api/caller", "PATCH", values);
+        stateRevision += 1;
+        Object.assign(config, values);
+        for (const [key, value] of Object.entries(values)) {
+          if (pendingSettings[key] === value) delete pendingSettings[key];
+        }
+        settingsError = "";
+      } catch (cause) {
+        settingsError = `Not saved: ${cause.message}`;
+      } finally {
+        settingsSave = null;
+        dirty = voiceChanged || !!Object.keys(pendingSettings).length;
+        voiceState();
+        if (Object.keys(pendingSettings).length && !settingsError) {
+          settingsTimer = setTimeout(saveSettings, 500);
+        }
+      }
+    })();
+    voiceState();
+    return settingsSave;
   }
 
   function stopAudio() {
@@ -185,6 +247,7 @@
 
   async function refreshCaller() {
     if (working || polling) return polling;
+    const revision = stateRevision;
     polling = (async () => {
       try {
         current = await api("/api/caller/status");
@@ -207,14 +270,19 @@
               : current.voice
                 ? "Voice unavailable"
                 : "Choose a voice";
+        $("overview-caller").textContent = !current.enabled
+          ? "Disabled"
+          : $("caller-state").textContent;
         error(current.error || "");
         if (page === "caller") {
+          const version = `${current.voice}:${current.installed}:${current.download.state}`;
           const [catalogue, settings] = await Promise.all([
-            api("/api/caller/voices"),
+            catalogueVersion !== version ? api("/api/caller/voices") : voices,
             api("/api/caller"),
           ]);
           voices = catalogue;
-          fill(settings);
+          catalogueVersion = version;
+          if (revision === stateRevision) fill(settings);
         }
         voiceState();
         $("caller-test").disabled =
@@ -232,6 +300,7 @@
           $("caller-test").disabled =
           $("caller-save").disabled =
             true;
+        $("overview-caller").textContent = "Unavailable";
       }
     })().finally(() => {
       polling = null;
@@ -242,16 +311,20 @@
   async function change(work) {
     if (working) return;
     working = true;
+    clearTimeout(settingsTimer);
     $("caller-toggle").disabled = true;
     voiceState();
     try {
       await polling;
+      await settingsSave;
       await work();
     } catch (cause) {
       notice(cause.message, true);
     } finally {
       working = false;
       await refreshCaller();
+      if (Object.keys(pendingSettings).length && !settingsError)
+        settingsTimer = setTimeout(saveSettings, 500);
     }
   }
 
@@ -264,30 +337,39 @@
     }),
   );
   $("caller-language").addEventListener("change", () => options(""));
-  $("caller-voice").addEventListener("change", voiceState);
-  $("caller-form").addEventListener("input", () => {
-    dirty = true;
+  function editSettings(event) {
+    stateRevision += 1;
+    const key = event.target.id.replace("caller-", "");
+    if (["language", "voice"].includes(key)) {
+      voiceChanged = $("caller-voice").value !== config?.voice;
+    } else if (["volume", "output", "darts", ...flags].includes(key)) {
+      pendingSettings[key] =
+        key === "volume"
+          ? Number(event.target.value) / 100
+          : flags.includes(key)
+            ? event.target.checked
+            : event.target.value;
+      settingsError = "";
+      clearTimeout(settingsTimer);
+      settingsTimer = setTimeout(saveSettings, 500);
+    } else return;
+    dirty = voiceChanged || !!Object.keys(pendingSettings).length;
     voiceState();
-  });
-  $("caller-form").addEventListener("change", () => {
-    dirty = true;
-    voiceState();
-  });
+  }
+  $("caller-form").addEventListener("input", editSettings);
+  $("caller-form").addEventListener("change", editSettings);
+  $("caller-settings-retry").addEventListener("click", saveSettings);
   $("caller-form").addEventListener("submit", (event) => {
     event.preventDefault();
     change(async () => {
-      const values = {
-        voice: $("caller-voice").value,
-        output: $("caller-output").value,
-        volume: Number($("caller-volume").value) / 100,
-        darts: $("caller-darts").value,
-      };
-      flags.forEach((key) => {
-        values[key] = $("caller-" + key).checked;
-      });
+      const values = { voice: $("caller-voice").value };
       await api("/api/caller", "PATCH", values);
-      dirty = false;
-      notice("Caller settings saved.");
+      stateRevision += 1;
+      voiceChanged = false;
+      dirty = !!Object.keys(pendingSettings).length;
+      notice(
+        "Voice selected. Download progress appears below the voice selector.",
+      );
     });
   });
   $("caller-retry").addEventListener("click", () =>
@@ -328,6 +410,11 @@
     stopAudio();
     socket?.close();
   });
-  refreshCaller();
-  setInterval(refreshCaller, 2000);
+  window.addEventListener("beforeunload", (event) => {
+    if (Object.keys(pendingSettings).length || settingsSave) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
+  poll(refreshCaller, { background: true });
 })();

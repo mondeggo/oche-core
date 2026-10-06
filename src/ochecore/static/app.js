@@ -1,4 +1,4 @@
-const $ = (id) => document.getElementById(id);
+import { $, api, poll, eventEntries } from "./client.mjs";
 const fields = ["client_id", "board_id"];
 const pages = {
   overview: ["Overview", "Your board and connection at a glance."],
@@ -25,7 +25,7 @@ const labels = {
   error: "Connection error",
   stopped: "Stopped",
 };
-let page = "overview";
+export let page = "overview";
 let stream = "normalized";
 let refreshTask = null;
 let busy = false;
@@ -38,31 +38,12 @@ let renderedBoards = "";
 let boardLoading = false;
 let nextBoardRefresh = 0;
 let renderedEvents = "";
+let entries = [];
+let eventElements = new Map();
+let eventsPaused = false;
 let eventRequest = 0;
 let debugState = null;
 let debugBusy = false;
-
-async function api(path, method = "GET", body) {
-  const options = { method };
-  if (method !== "GET") {
-    options.headers = { "Content-Type": "application/json" };
-    options.body = JSON.stringify(body ?? {});
-  }
-  const response = await fetch(path, options);
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(
-      typeof data.detail === "string"
-        ? data.detail
-        : Array.isArray(data.detail)
-          ? data.detail
-              .map((item) => `${item.loc.slice(1).join(" / ")}: ${item.msg}`)
-              .join("; ")
-          : "Check the settings.",
-    );
-  }
-  return data;
-}
 
 function navigate(focus = false) {
   const requested = location.hash.slice(1);
@@ -88,13 +69,14 @@ function navigate(focus = false) {
   refreshEvents();
 }
 
-function setIntegrationEnabled(name, enabled) {
+export function setIntegrationEnabled(name, enabled) {
   integrations[name] = enabled;
   document.querySelector(`[data-integration="${name}"]`).hidden = !enabled;
+  $("setup-integrations").hidden = Object.values(integrations).some(Boolean);
   if (page === name && !enabled) navigate(true);
 }
 
-function notice(message, error = false) {
+export function notice(message, error = false) {
   $("notice-text").textContent = message;
   $("notice").className = error ? "notice error" : "notice";
   $("notice").hidden = false;
@@ -284,17 +266,26 @@ function renderDebug(value) {
 }
 
 function renderEvents(events) {
-  const signature = `${stream}:${JSON.stringify(events)}`;
+  if (events) entries = eventEntries(events, stream === "raw", entries);
+  const filter = $("event-filter").value.trim().toLowerCase();
+  const visible = entries.filter(({ event }) =>
+    (stream === "raw"
+      ? [event?.channel, event?.topic, event?.type].filter(Boolean).join(" ")
+      : event.event
+    )
+      .toLowerCase()
+      .includes(filter),
+  );
+  const signature = `${stream}:${filter}:${JSON.stringify(entries)}`;
   if (signature === renderedEvents) return;
   renderedEvents = signature;
   const list = $("event-list");
-  const existing = new Map(
-    [...list.children].map((item) => [item.dataset.key, item]),
-  );
-  const entries = events.map((event, index) => {
-    const key =
-      stream === "normalized" ? event.id : `${index}:${JSON.stringify(event)}`;
-    if (existing.has(key)) return existing.get(key);
+  const retained = new Set(entries.map((entry) => entry.key));
+  for (const key of eventElements.keys()) {
+    if (!retained.has(key)) eventElements.delete(key);
+  }
+  const nodes = visible.map(({ event, key }) => {
+    if (eventElements.has(key)) return eventElements.get(key);
     const details = document.createElement("details");
     const summary = document.createElement("summary");
     const pre = document.createElement("pre");
@@ -313,17 +304,43 @@ function renderEvents(events) {
           .join(" · ") || "AutoDarts frame";
     }
     pre.textContent = JSON.stringify(event, null, 2);
-    details.append(summary, pre);
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "event-copy";
+    copy.textContent = "Copy JSON";
+    copy.addEventListener("click", async () => {
+      try {
+        if (navigator.clipboard)
+          await navigator.clipboard.writeText(pre.textContent);
+        else {
+          const text = document.createElement("textarea");
+          text.value = pre.textContent;
+          text.className = "clipboard-buffer";
+          document.body.append(text);
+          text.select();
+          const copied = document.execCommand("copy");
+          text.remove();
+          copy.focus();
+          if (!copied) throw new Error("Clipboard unavailable");
+        }
+        notice("Event copied.");
+      } catch {
+        notice("Could not copy. Select and copy the JSON below.", true);
+      }
+    });
+    details.append(summary, copy, pre);
+    eventElements.set(key, details);
     return details;
   });
-  list.replaceChildren(...entries.reverse());
+  list.replaceChildren(...nodes.reverse());
   $("event-count").textContent =
-    `${events.length} ${events.length === 1 ? "entry" : "entries"}`;
-  $("empty").hidden = events.length > 0;
+    `${visible.length} of ${entries.length} entries`;
+  $("empty").hidden = entries.length > 0;
+  $("event-no-match").hidden = !entries.length || !!visible.length;
 }
 
 async function refreshEvents() {
-  if (page !== "events") return;
+  if (page !== "events" || eventsPaused) return;
   const request = ++eventRequest;
   try {
     const events = await api(
@@ -342,14 +359,25 @@ async function refreshEvents() {
 
 async function refreshData() {
   try {
-    const [newStatus, newConfig] = await Promise.all([
+    const [newStatus, newConfig, game] = await Promise.all([
       api("/api/status"),
       api("/api/config"),
+      api("/api/game"),
     ]);
     available = true;
     status = newStatus;
     applyConfig(newConfig);
     renderStatus();
+    $("overview-phase").textContent = game.editing
+      ? "Editing score"
+      : {
+          ready: "Ready to throw",
+          takeout: "Remove darts",
+          waiting: "Wait",
+          idle: "Idle",
+        }[game.phase] || "Waiting for board";
+    $("overview-phase").dataset.phase = game.phase;
+    $("overview-phase-reason").textContent = game.reason || "";
     if (status.auth.state === "authenticated") {
       if (Date.now() >= nextBoardRefresh) await loadBoards();
     } else {
@@ -367,6 +395,9 @@ async function refreshData() {
     badge("account-state", "Unavailable", "warning");
     badge("board-state", "Status unknown");
     $("match").textContent = "Waiting for the service to reconnect.";
+    $("overview-phase").textContent = "Unavailable";
+    $("overview-phase").dataset.phase = "waiting";
+    $("overview-phase-reason").textContent = "";
     $("warning-text").textContent =
       "Cannot reach OcheCore. Retrying automatically.";
     $("connection-warning").hidden = false;
@@ -473,12 +504,32 @@ document.querySelectorAll("[data-stream]").forEach((button) =>
         ? "Frames appear when the connected AutoDarts stream sends data."
         : "Start a match and throw a dart on your connected board.";
     $("event-list").replaceChildren();
+    entries = [];
+    eventElements.clear();
     renderedEvents = "";
+    $("event-filter").value = "";
+    eventsPaused = false;
+    $("events-pause").textContent = "Pause display";
+    $("events-pause").setAttribute("aria-pressed", "false");
+    $("events-display-state").textContent =
+      "Latest 100 entries from this service session. Updates automatically.";
     renderEvents([]);
     refreshEvents();
   }),
 );
+$("event-filter").addEventListener("input", () => renderEvents());
+$("events-pause").addEventListener("click", () => {
+  eventsPaused = !eventsPaused;
+  eventRequest += 1;
+  $("events-pause").textContent = eventsPaused
+    ? "Resume display"
+    : "Pause display";
+  $("events-pause").setAttribute("aria-pressed", String(eventsPaused));
+  $("events-display-state").textContent = eventsPaused
+    ? "Display paused. The service and debug recording keep running."
+    : "Latest 100 entries from this service session. Updates automatically.";
+  if (!eventsPaused) refreshEvents();
+});
 window.addEventListener("hashchange", () => navigate(true));
 navigate();
-refresh();
-setInterval(refresh, 2000);
+poll(refresh);
