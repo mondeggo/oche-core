@@ -244,3 +244,83 @@ def test_discovery_distinguishes_empty_and_invalid_responses(settings, payload, 
             assert response.json()["boards"] == []
         else:
             assert "invalid board" in response.json()["detail"]
+
+
+def test_wled_revision_rejects_stale_updates_and_keeps_legacy_clients(settings):
+    with TestClient(create_app(settings)) as client:
+        first = client.get("/api/wled")
+        revision = first.headers["etag"]
+        assert client.get("/api/wled/status").headers["etag"] == revision
+        saved = client.patch("/api/wled", json={"enabled": True}, headers={"If-Match": revision})
+        assert saved.status_code == 200
+        assert saved.headers["etag"] != revision
+        for method in (client.patch, client.put):
+            stale = method("/api/wled", json=first.json(), headers={"If-Match": revision})
+            assert stale.status_code == 412
+            assert "another client" in stale.json()["detail"]
+        assert client.get("/api/wled").json()["enabled"] is True
+        assert client.patch("/api/wled", json={"enabled": False}).status_code == 200
+
+
+def test_wled_device_updates_are_atomic_and_do_not_replace_other_fields(settings):
+    def no_hardware(request):
+        pytest.fail(f"Device setup attempted hardware request: {request.url}")
+
+    app = create_app(settings, transport=httpx.MockTransport(no_hardware))
+    with TestClient(app) as client:
+        new_device = {"id": "board", "name": "Original", "url": "http://wled.test"}
+        saved = client.post("/api/wled/devices", json=new_device)
+        assert saved.status_code == 201
+        assert "etag" in saved.headers
+        assert client.post("/api/wled/devices", json=new_device).status_code == 422
+        config = client.get("/api/wled").json()
+        config["devices"][0]["name"] = "Renamed in another client"
+        assert client.put("/api/wled", json=config).status_code == 200
+        changed = client.patch("/api/wled/devices/board", json={"enabled": False})
+        assert changed.status_code == 200
+        assert changed.headers["etag"] != saved.headers["etag"]
+        device = client.get("/api/wled").json()["devices"][0]
+        assert device["name"] == "Renamed in another client"
+        assert device["enabled"] is False
+        assert client.patch("/api/wled/devices/missing", json={"enabled": True}).status_code == 404
+        assert client.patch("/api/wled/devices/board", json={"name": "lost"}).status_code == 422
+        assert (
+            client.patch(
+                "/api/wled/devices/board",
+                json={"enabled": True},
+                headers={"If-Match": saved.headers["etag"]},
+            ).status_code
+            == 412
+        )
+
+
+def test_profile_mutations_return_revisions_and_reject_stale_config(settings):
+    with TestClient(create_app(settings)) as client:
+        revision = client.get("/api/wled").headers["etag"]
+        created = client.post(
+            "/api/wled/profiles", json={"name": "Quiet"}, headers={"If-Match": revision}
+        )
+        assert created.status_code == 200
+        current = created.headers["etag"]
+        assert current != revision
+        profile_id = client.get("/api/wled").json()["active_profile"]
+        for method, path, body in (
+            (client.post, "/api/wled/profiles", {"name": "Duplicate"}),
+            (client.put, "/api/wled/profile", {"id": "default"}),
+        ):
+            assert method(path, json=body, headers={"If-Match": revision}).status_code == 412
+        assert (
+            client.delete(
+                f"/api/wled/profiles/{profile_id}", headers={"If-Match": revision}
+            ).status_code
+            == 412
+        )
+        selected = client.put(
+            "/api/wled/profile", json={"id": "default"}, headers={"If-Match": current}
+        )
+        assert selected.status_code == 200
+        removed = client.delete(
+            f"/api/wled/profiles/{profile_id}", headers={"If-Match": selected.headers["etag"]}
+        )
+        assert removed.status_code == 200
+        assert removed.headers["etag"] == client.get("/api/wled").headers["etag"]

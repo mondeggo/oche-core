@@ -1,15 +1,18 @@
+import hashlib
+import json
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ochecore import __version__
 from ochecore.config import ConnectionConfig
 from ochecore.events import DebugRecording, Event
 from ochecore.integrations.caller.service import CallerConfig, CallerTest
 from ochecore.integrations.wled.service import (
+    Device,
     DeviceAddress,
     DraftPreview,
     Power,
@@ -18,6 +21,26 @@ from ochecore.integrations.wled.service import (
     ProfileSelection,
     WLEDConfig,
 )
+
+
+class DeviceEnabled(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+
+
+def wled_revision(runtime) -> str:
+    data = json.dumps(runtime.wled.config.model_dump(mode="json"), sort_keys=True).encode()
+    return f'"{hashlib.sha256(data).hexdigest()}"'
+
+
+def check_wled_revision(request: Request, runtime) -> None:
+    expected = request.headers.get("if-match")
+    if (
+        expected
+        and expected != "*"
+        and wled_revision(runtime) not in {value.strip() for value in expected.split(",")}
+    ):
+        raise HTTPException(412, "WLED settings changed in another client. Reload and try again.")
 
 
 def same_origin(origin: str | None, host: str, scheme: str) -> bool:
@@ -66,20 +89,25 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
         return request.app.state.runtime.game_state()
 
     @router.get("/api/wled")
-    async def wled_config(request: Request) -> WLEDConfig:
-        return request.app.state.runtime.wled.config
+    async def wled_config(request: Request, response: Response) -> WLEDConfig:
+        runtime = request.app.state.runtime
+        response.headers["ETag"] = wled_revision(runtime)
+        return runtime.wled.config
 
     @router.put("/api/wled")
-    async def configure_wled(config: WLEDConfig, request: Request):
+    async def configure_wled(config: WLEDConfig, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
+            check_wled_revision(request, runtime)
             await runtime.wled.configure(config)
+            response.headers["ETag"] = wled_revision(runtime)
         return {"saved": True}
 
     @router.patch("/api/wled")
-    async def update_wled(config: WLEDConfig, request: Request):
+    async def update_wled(config: WLEDConfig, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
+            check_wled_revision(request, runtime)
             if config.model_fields_set:
                 updated = runtime.wled.config.model_copy(
                     update={key: getattr(config, key) for key in config.model_fields_set}
@@ -89,29 +117,72 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
                 except ValidationError as exc:
                     raise HTTPException(422, exc.errors()[0]["msg"]) from exc
                 await runtime.wled.configure(updated)
+            response.headers["ETag"] = wled_revision(runtime)
         return {"saved": True}
 
+    @router.post("/api/wled/devices", status_code=201)
+    async def add_wled_device(device: Device, request: Request, response: Response):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            check_wled_revision(request, runtime)
+            config = runtime.wled.config.model_dump(mode="json")
+            config["devices"].append(device.model_dump(mode="json"))
+            try:
+                updated = WLEDConfig.model_validate(config)
+            except ValidationError as exc:
+                raise HTTPException(422, exc.errors()[0]["msg"]) from exc
+            await runtime.wled.configure(updated)
+            response.headers["ETag"] = wled_revision(runtime)
+        return {"saved": True, "device": device.model_dump(mode="json")}
+
     @router.get("/api/wled/status")
-    async def wled_status(request: Request):
-        return request.app.state.runtime.wled.status()
+    async def wled_status(request: Request, response: Response):
+        runtime = request.app.state.runtime
+        response.headers["ETag"] = wled_revision(runtime)
+        return runtime.wled.status()
 
     @router.post("/api/wled/profiles")
-    async def wled_create_profile(profile: ProfileName, request: Request):
+    async def wled_create_profile(profile: ProfileName, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            return await runtime.wled.create_profile(profile.name, profile.source)
+            check_wled_revision(request, runtime)
+            result = await runtime.wled.create_profile(profile.name, profile.source)
+            response.headers["ETag"] = wled_revision(runtime)
+            return result
 
     @router.put("/api/wled/profile")
-    async def wled_select_profile(profile: ProfileSelection, request: Request):
+    async def wled_select_profile(profile: ProfileSelection, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            return await runtime.wled.select_profile(profile.id)
+            check_wled_revision(request, runtime)
+            result = await runtime.wled.select_profile(profile.id)
+            response.headers["ETag"] = wled_revision(runtime)
+            return result
 
     @router.delete("/api/wled/profiles/{profile_id}")
-    async def wled_delete_profile(profile_id: str, request: Request):
+    async def wled_delete_profile(profile_id: str, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            return await runtime.wled.delete_profile(profile_id)
+            check_wled_revision(request, runtime)
+            result = await runtime.wled.delete_profile(profile_id)
+            response.headers["ETag"] = wled_revision(runtime)
+            return result
+
+    @router.patch("/api/wled/devices/{device_id}")
+    async def update_wled_device(
+        device_id: str, update: DeviceEnabled, request: Request, response: Response
+    ):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            check_wled_revision(request, runtime)
+            config = runtime.wled.config.model_copy(deep=True)
+            device = next((item for item in config.devices if item.id == device_id), None)
+            if device is None:
+                raise HTTPException(404, "Unknown WLED device. Save it first.")
+            device.enabled = update.enabled
+            await runtime.wled.configure(config)
+            response.headers["ETag"] = wled_revision(runtime)
+        return {"saved": True}
 
     @router.post("/api/wled/{device_id}/probe")
     async def wled_probe(device_id: str, request: Request):
