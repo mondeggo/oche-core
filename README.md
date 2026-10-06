@@ -79,6 +79,7 @@ Keep the service running in Docker or another terminal. These commands control t
 
 ```powershell
 uv run ochecore status
+uv run ochecore doctor
 uv run ochecore config
 uv run ochecore login
 uv run ochecore boards
@@ -87,14 +88,16 @@ uv run ochecore events
 uv run ochecore events --follow
 uv run ochecore events --raw
 uv run ochecore events --raw --follow
-uv run ochecore events --debug on
-uv run ochecore events --debug off
+uv run ochecore events debug on
+uv run ochecore events debug off
+uv run ochecore events debug download --output capture.jsonl
 uv run ochecore logout
 ```
 
 `login` prints the AutoDarts URL and user code, then waits for approval. Approve on your phone
 or another computer; the OcheCore host needs no browser. Use `login --no-wait --json` to return
 immediately while the service continues approval polling. Ctrl+C also leaves polling active.
+`login --json` writes one final JSON result to stdout and approval instructions to stderr.
 `logout` clears the service's saved session.
 
 `boards` discovers boards linked to the connected AutoDarts account and prints each ID,
@@ -104,8 +107,11 @@ means the account has no boards; login and upstream errors are reported separate
 
 `config` updates only the supplied fields and applies the same locks and validation as the UI.
 Use `--client-id YOUR_CLIENT_ID` to update an unlocked client field, or `--board-id=` to clear
-the selected board. Status, configuration and event history use JSON. Live events use one JSON
-object per line; a lost stream exits with an error so a supervisor can restart the command.
+the selected board. Status and lists use readable summaries; append `--json` for scripts.
+Configuration exports and event history remain JSON. `doctor` checks setup using read-only
+API requests and suggests next steps; it returns exit code 1 when attention is needed.
+Live events use one JSON object per line; a lost stream exits with an error so a supervisor
+can restart the command.
 Commands return nonzero on failure and 130 on interruption.
 
 `events` reads normalized game events. Add `--raw` to read incoming AutoDarts WebSocket
@@ -219,7 +225,7 @@ Valid edits save after a short pause; incomplete fields or failed saves keep the
 The save indicator offers retry after errors. Add a target; **Target setup** contains its segment and mode.
 Output cards show GPIO pins, colour/white capability, LED type and length. Select an
 output to edit its targets, or **All targets** to see the whole controller. Selection changes
-only the view. **Add target on GPIO …** uses an available segment on that output; an already
+only the view. **Add zone on GPIO …** uses an available segment on that output; an already
 used segment starts with the new target disabled to avoid overlapping rules.
 
 Output detection reads WLED's LED hardware configuration.
@@ -281,7 +287,8 @@ player's one-based match position; a name filter matches a case-insensitive subs
 The first enabled matching slot wins. Player colours apply only to local players while ready.
 Matrix targets show **Score display** and **Events** instead. Tabs support arrow-key navigation.
 Disabled events keep their controls collapsed until enabled.
-Dropdowns offer search, scrollable full option names, arrow-key navigation and Enter to select.
+Long dropdowns offer search, scrollable full option names, arrow-key navigation and Enter to select.
+Short lists use the native selector.
 Escape or clicking outside closes the menu without changing the selection.
 
 The current phase is highlighted. Phase/player colours
@@ -307,6 +314,8 @@ segment `1`; remove the matrix target if you do not have one. Keep the service r
 ```powershell
 uv run ochecore wled discover
 uv run ochecore wled config --file config/wled.example.json
+uv run ochecore wled devices
+uv run ochecore wled targets list board
 uv run ochecore wled probe board
 uv run ochecore wled probe --url http://wled.local
 uv run ochecore wled enable
@@ -325,7 +334,13 @@ uv run ochecore game
 uv run ochecore wled disable board
 ```
 
-`wled enable` / `disable` without a device ID controls the whole integration. To edit settings,
+Add a controller without replacing other devices with
+`ochecore wled devices add board --name "Main board" --url http://wled.local`.
+Add lighting zones in the UI, or supply targets through the JSON configuration.
+The UI calls these zones; CLI/API configuration retains the `targets` field.
+
+`wled enable` / `disable` controls event automation; `wled on` / `off` controls power.
+Without a device ID these commands affect the whole integration or all devices. To edit settings,
 save the output of `ochecore wled config` to a JSON file and reload it with `--file`. Settings
 are validated and saved atomically in `data/wled.json`; no restart is required. Per-target
 `enabled`, phase appearances and event effects use the same configuration through API and UI.
@@ -335,8 +350,9 @@ and no effects for steady illumination. Standard Docker commands use
 
 ### First-version limits
 
-Configure LED geometry and turn on master power in WLED first; master brightness must be above
-zero. Assign dedicated, non-overlapping segments to OcheCore. Individual pixel control freezes
+Configure LED geometry in WLED first. Normal automation requires master power and nonzero
+brightness; previews temporarily wake the controller and restore its prior state. Assign dedicated,
+non-overlapping segments to OcheCore. Individual pixel control freezes
 the native effect for its entire segment and sets segment brightness to full, scaling colours
 per target. Other pixels in that segment therefore share those settings. Untargeted segments
 are left alone. Saved appearances belong to OcheCore; applying native whole-device WLED presets
@@ -344,10 +360,11 @@ is not included in this version.
 
 The matrix renderer supports linear segments wired in rows and native WLED 2D segments.
 Native 2D segments appear as matrix cards with their dimensions, separate from physical GPIOs.
-For a supported matrix size, **Add target** selects score mode and fills in its dimensions.
+For a supported matrix size, **Add zone** selects score mode and fills in its dimensions.
 Native 2D targets must use First LED 0 and match the selected rectangle's width and height;
 WLED manages physical wiring, so the OcheCore serpentine option is hidden. Grouping must be 1,
 spacing and offset 0, with segment reverse/mirror/transpose disabled for pixel control.
+These geometry checks apply to both linear strips and native matrices.
 These restrictions do not prevent using native WLED effects on whole segments.
 
 Limits are 512 pixels per matrix and 1024 individually controlled pixels per controller;
@@ -435,7 +452,13 @@ on load and omitted on the next configuration save. See the
 | `WS /events/raw` | Live incoming AutoDarts frames |
 | `/docs` | API documentation when UI is enabled; schema always at `/openapi.json` |
 
-POST/PUT requests require `Content-Type: application/json`; use `{}` for login/logout.
+WLED configuration and status responses include an `ETag`. Send it as `If-Match` when
+replacing settings or changing profiles to reject stale writes with HTTP 412. The UI keeps
+the unsaved draft visible until you reload after a conflict. Atomic device updates use
+`PATCH /api/wled/devices/{id}` with `{"enabled":false}`; add a controller with
+`POST /api/wled/devices`. Clients that omit `If-Match` retain their existing behavior.
+
+POST/PUT/PATCH requests require `Content-Type: application/json`; use `{}` for login/logout.
 WebSockets use native JSON, not Socket.IO. Slow subscribers have bounded queues and lose
 oldest messages on overflow; status reports separate delivery-drop counters for each stream.
 Histories are held in memory, with no WebSocket replay or delivery acknowledgements.
@@ -469,9 +492,11 @@ Open `http://YOUR_LAN_IP:9180` from another device, using your configured port i
 uv run pytest
 uv run ruff check src tests scripts
 uv run ruff format --check src tests scripts
+node --test tests/test_frontend.mjs
 ```
 
 Tests use HTTP mocks and a local WebSocket test server; no AutoDarts account is required.
+The small UI transport/history suite uses Node.js 20+ and its built-in test runner, with no npm dependencies.
 If Windows denies access to an old pytest temporary folder, use a fresh one:
 
 ```powershell

@@ -2,26 +2,29 @@
 
 The headless service turns normalized game events into ordered audio calls. The UI and CLI
 share the same settings and controls. Enable **Caller** in **All integrations**, then open
-its sidebar page, choose a language and voice, and save your settings.
+its sidebar page, choose a language and voice, and select **Download and use voice**.
+Volume, output and announcement settings save automatically with inline error/retry feedback.
 Use **Play test** to check the selected output without starting a match.
 
 ## Voices and output
 
 Choose a voice using the [Peschi previews](https://darts-caller-preview.peschi.org/).
 French includes Rémi and Léa.
-The catalogue is metadata, not downloaded audio. Saving a voice downloads only that selected
+The catalogue contains metadata. Applying a voice downloads only that selected
 pack in the background. Once installation succeeds, other cached packs are removed, along with
-temporary ZIP files. A failed download preserves the previous pack; reselect it or use **Retry
-download**. Calls pause while the selected voice is being prepared. Wait for the current download
+temporary ZIP files. A failed download preserves the previous pack; reselect it or use **Repair voice download**. Calls pause while the selected voice is being prepared. Wait for the current download
 to finish before switching again. A restart resumes installation of a saved selection if needed.
 
 Settings are in `data/caller.json`;
-installed clips and their sound-key index are in `data/voices/`. Both persist in the Docker
+installed clips and their sound-key index are in `data/voices/`. A damaged index or missing/empty
+clip marks the pack unavailable. **Repair voice download**, or running `caller install` for the
+same voice, downloads a replacement while retaining the existing pack until it succeeds.
+Both persist in the Docker
 bind mount. Installed packs work offline. Audio files are not bundled in the repository or image.
 
 - **Host** (default): plays on the service computer's default sound device using SDL. No browser
   is needed. Select the desired default device in the host OS before starting OcheCore.
-- **Browser**: open the UI, select this output, save, then press **Enable sound here**. Keep the
+- **Browser**: open the UI, select this output, wait for it to save, then press **Enable sound here**. Keep the
   page open; playback continues when navigating between OcheCore pages. Each enabled browser
   receives the calls. Reloading the page requires enabling sound again.
 - **Both**: sends calls to host speakers and enabled browsers. Outputs are not synchronized.
@@ -41,8 +44,9 @@ With the service running:
 ```sh
 uv run ochecore caller voices --language fr-FR
 uv run ochecore caller config --voice amazon-fr-fr-remi-male --output host --volume 0.6
+uv run ochecore caller config --darts auto --local-only --no-include-bots
 uv run ochecore caller status
-# Wait until installed is true, then enable playback:
+# Wait until the voice is ready, then enable playback:
 uv run ochecore caller enable
 uv run ochecore caller test --score 180
 uv run ochecore caller test --call checkout --score 40

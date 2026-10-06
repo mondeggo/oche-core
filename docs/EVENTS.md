@@ -11,7 +11,9 @@
 
 Each history holds the latest 100 entries in memory. Each live subscriber has an independent
 bounded queue. Normal operation does not write events to disk or replay on WebSocket connection. The optional
-UI switches between both streams. Both APIs remain available with the UI disabled.
+UI switches between both streams, filters by event type/channel and copies individual payloads.
+**Pause display** freezes the visible history; event processing and debug recording continue.
+Both APIs remain available with the UI disabled.
 
 ## Debug recording
 
@@ -22,10 +24,14 @@ captures raw AutoDarts frames. The lists still show only their latest 100 entrie
 The same controls work without the UI:
 
 ```sh
-uv run ochecore events --debug on
-uv run ochecore events --debug status
-uv run ochecore events --debug off
+uv run ochecore events debug on
+uv run ochecore events debug status
+uv run ochecore events debug off
+uv run ochecore events debug download --output capture.jsonl
 ```
+
+The legacy `events --debug on/off/status` spelling remains supported. Downloads refuse to
+overwrite existing files and remove partial output after failure.
 
 Recording happens in the service and continues after closing the terminal or page. It survives
 AutoDarts reconnection and account/board changes. It starts off after a service restart.
@@ -69,7 +75,8 @@ clears displayed scores while keeping the event comparison baseline. The phase i
 until a valid match state arrives; with no active match it is `idle`.
 
 For local players, `ready` requires explicit board status `Throw`, `Ready` or `Ready for throw`.
-Unknown/calibrating statuses and new detection signals use `waiting`. Completed local visits
+Unknown/calibrating statuses and new detection signals use `waiting`. Score editing also uses
+`waiting`, with reason `Editing score`. Completed local visits
 and local takeout signals use `takeout`; takeout completion waits for fresh readiness.
 Remote players and bots cannot enable local ready lighting. `Throw` and paired detection/takeout
 messages were verified against the October 2 X01 and Cricket capture.
@@ -144,6 +151,11 @@ Random Checkout and 121; it is null for modes that do not count down. Neither is
 are `name`, `number`, `multiplier` and `bed`. Dart points are number × multiplier: T20 is 60,
 double bull is 50 and a miss is 0. A miss alone is not a bust. Scores and win decisions remain
 authoritative AutoDarts fields; OcheCore does not implement its own X01 scoring engine.
+
+Corrections/removals in previously observed older visits carry `historical: true`. New darts
+added to those visits use `throw_corrected` rather than replaying a live throw. Newly discovered
+history and snapshots establish silent baselines. Replacing a winning dart does not repeat
+victory events; undoing a win and winning again does.
 
 ## Interpretation rules
 
