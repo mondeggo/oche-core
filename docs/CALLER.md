@@ -15,12 +15,15 @@ pack in the background. Once installation succeeds, other cached packs are remov
 temporary ZIP files. A failed download preserves the previous pack; reselect it or use **Repair voice download**. Calls pause while the selected voice is being prepared. Wait for the current download
 to finish before switching again. A restart resumes installation of a saved selection if needed.
 
-Settings are in `data/caller.json`;
+Settings belong to the active [application profile](../README.md#application-profiles)
+in `data/profiles.json`;
 installed clips and their sound-key index are in `data/voices/`. A damaged index or missing/empty
 clip marks the pack unavailable. **Repair voice download**, or running `caller install` for the
 same voice, downloads a replacement while retaining the existing pack until it succeeds.
 Both persist in the Docker
-bind mount. Installed packs work offline. Audio files are not bundled in the repository or image.
+bind mount. Installed packs work offline. Switching profiles also restores enabled state,
+voice, output, volume and announcement rules. A voice removed from the cache is downloaded
+again when selected. Audio files are not bundled in the repository or image.
 
 - **Host** (default): plays on the service computer's default sound device using SDL. No browser
   is needed. Select the desired default device in the host OS before starting OcheCore.
@@ -54,12 +57,15 @@ uv run ochecore caller stop
 uv run ochecore caller disable
 ```
 
-`caller config --file caller.json` replaces the complete settings. Individual flags update only
-the supplied fields. `caller install VOICE_ID` also selects that voice and starts its download;
+`caller config --file caller.json` replaces the active profile's complete Caller settings.
+Individual flags update only the supplied fields. `caller install VOICE_ID` also selects that
+voice and starts its download;
 it does not build a collection of unused packs. `caller config --voice=` clears the selection
 and managed voice cache. A settings file can also set `darts` (`auto`, `segment`, `score`, `off`),
 `turn_totals`, `checkouts`, `players`, `include_bots` and `local_only`. Booleans default to true
 except `enabled` and `local_only`. Default output is `host`, volume `0.6`, darts `auto`.
+Use `ochecore profiles create Practice` to copy the current lighting and Caller settings,
+or `ochecore profiles use Quiet` to switch both together. Blank profiles start with Caller disabled.
 
 ## Game modes
 
@@ -105,6 +111,9 @@ after twelve seconds. A new browser connection receives future calls only.
 | `POST /api/caller/stop` | Cancel current and queued sound |
 | `GET /api/caller/audio/{id}/{clip}` | Serve a local installed clip |
 | WebSocket `/caller/audio` | Future browser playback instructions and stop messages |
+
+Configuration and status responses return an `ETag`. Supply it as `If-Match`
+on settings and voice-install requests to reject edits based on a changed profile with HTTP 412.
 
 The audio socket emits `type: "play"`, ordered `clips` (key, file, local URL), volume and an
 `expires_at` Unix timestamp, or `type: "stop"`. Clients must serialize clips, drop expired calls

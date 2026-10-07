@@ -1,5 +1,11 @@
 import { $, api, poll } from "./client.mjs";
-import { page, notice, setIntegrationEnabled } from "./app.js";
+import {
+  page,
+  notice,
+  setIntegrationEnabled,
+  registerProfileEditor,
+  profileChanging,
+} from "./app.js";
 
 /* WLED forms edit service configuration; device traffic stays in the headless core. */
 (() => {
@@ -124,7 +130,8 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
   });
 
   function buttons() {
-    $("wled-toggle").disabled = working || !latestStatus || !!statusError;
+    $("wled-toggle").disabled =
+      working || profileChanging || !latestStatus || !!statusError;
     $("wled-toggle-label").textContent = working
       ? "Saving…"
       : statusError
@@ -156,11 +163,6 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
       ? "Reload saved settings"
       : "Discard changes";
     $("wled-reload").hidden = !changed;
-    $("wled-profile").disabled = !configuration || changed;
-    $("wled-profile-create").disabled = $("wled-profile-blank").disabled =
-      !configuration || changed || configuration.profiles.length >= 12;
-    $("wled-profile-delete").disabled =
-      !configuration || changed || configuration.profiles.length <= 1;
     $("wled-device").disabled = working || changed;
     $("wled-reload").disabled = working;
     $("wled-probe").disabled = working || !device();
@@ -217,7 +219,6 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
         configurationETag = saved.etag;
         changed = revision !== editRevision;
         saveError = "";
-        renderProfiles();
         for (const option of $("wled-device").options) {
           const item = configuration.devices.find(
             (device) => device.id === option.value,
@@ -240,14 +241,6 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
     })();
     buttons();
     return saving;
-  }
-
-  function renderProfiles() {
-    const select = $("wled-profile");
-    select.replaceChildren(
-      ...configuration.profiles.map((item) => new Option(item.name, item.id)),
-    );
-    select.value = configuration.active_profile;
   }
 
   function origin(url) {
@@ -390,21 +383,18 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
     const select = document.createElement("select");
     select.dataset.value = "effect";
     const info = deviceInfo();
-    (info?.effects || ["Solid"]).forEach((name, index) => {
-      if (!["-", "RSVD"].includes(name)) select.add(new Option(name, index));
-    });
-    if (
-      ![...select.options].some(
-        (item) => Number(item.value) === settings.effect,
-      )
-    ) {
-      select.add(new Option(`Effect ${settings.effect}`, settings.effect));
-    }
-    select.value = settings.effect;
+    updateEffectOptions(select, settings.effect);
     const effectLabel = label("Effect", select);
     effectLabel.dataset.nativeEffect = "";
     effectLabel.hidden = mode !== "segment";
     controls.append(effectLabel);
+    if (mode === "segment" && !info?.effects?.length) {
+      const hint = document.createElement("span");
+      hint.className = "hint";
+      hint.dataset.effectsHint = "";
+      hint.textContent = "Check connection to load effects.";
+      controls.append(hint);
+    }
     const colour = label("Colour", input("color", settings.color, "color"));
     colour.dataset.colourControl = "";
     colour.querySelector("input").addEventListener("input", (event) => {
@@ -449,6 +439,24 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
     return row;
   }
 
+  function updateEffectOptions(select, selected = select.value) {
+    const effects = deviceInfo()?.effects;
+    const signature = JSON.stringify(effects || []);
+    if (select.dataset.catalogue === signature) return;
+    select.dataset.catalogue = signature;
+    select.replaceChildren();
+    (effects?.length ? effects : ["Solid"]).forEach((name, index) => {
+      if (!["-", "RSVD"].includes(name)) select.add(new Option(name, index));
+    });
+    if (
+      ![...select.options].some(
+        (option) => Number(option.value) === Number(selected),
+      )
+    )
+      select.add(new Option(`Effect ${selected}`, selected));
+    select.value = selected;
+  }
+
   function updateAppearance(row) {
     const enabled = row.querySelector('[data-value="enabled"]');
     const active = !enabled || enabled.checked;
@@ -471,6 +479,11 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
         : "Off";
     row.querySelectorAll("input, select, button").forEach((control) => {
       control.disabled = working || (!active && control !== enabled);
+      if (
+        control.matches('[data-value="effect"]') &&
+        !deviceInfo()?.effects?.length
+      )
+        control.disabled = true;
     });
   }
 
@@ -754,7 +767,6 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
   }
 
   function render() {
-    renderProfiles();
     const select = $("wled-device");
     select.replaceChildren(
       ...configuration.devices.map((item) => new Option(item.name, item.id)),
@@ -867,7 +879,16 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
           field(root, "name").value || "Lighting zone";
       });
       field(root, "mode").addEventListener("change", () => targetMode(root));
+      root
+        .querySelector("[data-remove]")
+        .setAttribute("aria-label", `Remove zone ${target.name}`);
       root.querySelector("[data-remove]").addEventListener("click", () => {
+        if (
+          !confirm(
+            `Remove lighting zone "${field(root, "name").value}" from all profiles?`,
+          )
+        )
+          return;
         collect();
         current.targets = current.targets.filter(
           (item) => item.id !== target.id,
@@ -952,6 +973,12 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
     $("wled-phase").dataset.phase = latestStatus.game.phase;
     $("wled-reason").textContent = latestStatus.game.reason;
     renderOutputs();
+    form
+      .querySelectorAll('[data-value="effect"]')
+      .forEach((select) => updateEffectOptions(select));
+    form.querySelectorAll("[data-effects-hint]").forEach((hint) => {
+      hint.hidden = !!deviceInfo()?.effects?.length;
+    });
     $("wled-targets")
       .querySelectorAll(".wled-phase-card")
       .forEach((card) => {
@@ -1007,8 +1034,8 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
     render();
   }
 
-  function refreshWled() {
-    if (working) return;
+  function refreshWled(force = false) {
+    if (working || (profileChanging && force !== true)) return;
     if (refreshing) return refreshing;
     refreshing = (async () => {
       try {
@@ -1063,18 +1090,10 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
   }
 
   async function work(task) {
-    if (working) return;
+    if (working || profileChanging) return;
     working = true;
     clearTimeout(saveTimer);
     buttons();
-    for (const id of [
-      "wled-profile",
-      "wled-profile-name",
-      "wled-profile-create",
-      "wled-profile-blank",
-      "wled-profile-delete",
-    ])
-      $(id).disabled = true;
     try {
       await refreshing;
       await saving;
@@ -1086,7 +1105,6 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
         control.disabled = false;
       });
       working = false;
-      $("wled-profile-name").disabled = false;
       buttons();
       if (changed && !saveError) saveTimer = setTimeout(saveDraft, 500);
       await refreshWled();
@@ -1105,69 +1123,30 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
     saveDraft();
   });
   $("wled-retry").addEventListener("click", saveDraft);
-  $("wled-profile").addEventListener("change", () => {
-    const id = $("wled-profile").value;
-    work(async () => {
-      await api(
-        "/api/wled/profile",
-        "PUT",
-        { id },
-        { etag: configurationETag },
-      );
-      await load();
-      notice("Lighting profile applied.");
-    });
-  });
-  function createProfile(source) {
-    const name = $("wled-profile-name").value.trim();
-    if (!name) return $("wled-profile-name").focus();
-    work(async () => {
-      await api(
-        "/api/wled/profiles",
-        "POST",
-        { name, source },
-        { etag: configurationETag },
-      );
-      $("wled-profile-name").value = "";
-      await load();
-      notice(
-        source === "blank"
-          ? "Blank profile created. Choose your lighting below."
-          : "Profile copied from the current colours and effects.",
-      );
-    });
-  }
-  $("wled-profile-create").addEventListener("click", () =>
-    createProfile("current"),
-  );
-  $("wled-profile-blank").addEventListener("click", () =>
-    createProfile("blank"),
-  );
-  $("wled-profile-delete").addEventListener("click", () =>
-    work(async () => {
-      await api(
-        `/api/wled/profiles/${configuration.active_profile}`,
-        "DELETE",
-        undefined,
-        { etag: configurationETag },
-      );
-      await load();
-      notice("Profile removed.");
-    }),
-  );
   $("wled-toggle").addEventListener("click", () => {
-    const enabled = !latestStatus.enabled;
     work(async () => {
+      if (changed)
+        throw new Error(
+          "Save or discard your WLED changes before toggling the integration.",
+        );
+      const current = await api("/api/wled", "GET", undefined, {
+        metadata: true,
+      });
+      const enabled = !current.data.enabled;
       const saved = await api(
         "/api/wled",
         "PATCH",
         { enabled },
         {
-          etag: configurationETag || statusETag,
+          etag: current.etag,
           metadata: true,
         },
       );
-      if (configuration) configurationETag = saved.etag;
+      if (configuration) {
+        configuration = { ...current.data, enabled };
+        configurationETag = saved.etag;
+        render();
+      }
       latestStatus.enabled = enabled;
       syncIntegration();
       notice(
@@ -1182,7 +1161,7 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
     render();
   });
   $("wled-add-device").addEventListener("click", () => {
-    addDevice("WLED controller", "http://wled.local");
+    addDevice("WLED controller", "");
   });
   $("wled-discover").addEventListener("click", () =>
     work(async () => {
@@ -1207,6 +1186,10 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
     }),
   );
   $("wled-remove-device").addEventListener("click", () => {
+    if (
+      !confirm(`Remove controller "${device().name}" and its lighting zones?`)
+    )
+      return;
     collect();
     configuration.devices = configuration.devices.filter(
       (item) => item.id !== selected,
@@ -1295,6 +1278,32 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
       }),
     );
   }
+  registerProfileEditor("WLED", {
+    async prepare() {
+      if (working) throw new Error("Wait for the WLED action to finish.");
+      await refreshing;
+      clearTimeout(saveTimer);
+      await saving;
+      await saveDraft();
+      if (changed)
+        throw new Error(
+          saveError || "Save or discard your WLED changes first.",
+        );
+    },
+    lock() {
+      [...form.elements].forEach((control) => {
+        control.disabled = true;
+      });
+    },
+    async reload(applied) {
+      [...form.elements].forEach((control) => {
+        control.disabled = false;
+      });
+      if (configuration && applied) await load(true);
+      await refreshWled(true);
+      buttons();
+    },
+  });
   window.addEventListener("hashchange", refreshWled);
   poll(refreshWled);
 })();

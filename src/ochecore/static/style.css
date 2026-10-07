@@ -711,7 +711,7 @@ input[type="color"] {
 /* WLED workspace */
 .wled-overview {
   display: grid;
-  grid-template-columns: 1fr minmax(200px, 34%) auto;
+  grid-template-columns: 1fr;
   gap: 12px 24px;
   padding: 16px 24px;
   border-top: 2px solid var(--accent);
@@ -747,52 +747,6 @@ input[type="color"] {
 }
 #wled-phase[data-phase="waiting"]::before {
   background: var(--accent);
-}
-.wled-profile-picker label {
-  margin: 0 0 6px;
-}
-.wled-profile-picker .hint {
-  display: block;
-  margin-top: 6px;
-  font-size: 12px;
-}
-.wled-profile-tools {
-  grid-column: 1 / -1;
-  border-top: 1px solid var(--border);
-  padding-top: 14px;
-}
-.wled-profile-tools summary {
-  color: var(--muted);
-  font-weight: 500;
-}
-.wled-profile-tools:not([open]) {
-  grid-column: auto;
-  border: 0;
-  padding: 0;
-  align-self: center;
-}
-#wled-profile-delete {
-  color: var(--error);
-}
-.wled-profile-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-}
-.wled-profile-actions > input {
-  flex: 1 1 200px;
-  min-width: 0;
-}
-.wled-profile-buttons {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-}
-.wled-profile-buttons button {
-  white-space: nowrap;
-  font-size: 12px;
-  padding-inline: 10px;
 }
 .wled-workspace {
   padding: 24px;
@@ -872,8 +826,7 @@ input[type="color"] {
   padding-bottom: 20px;
   border-bottom: 1px solid var(--border);
 }
-.wled-connection > summary,
-.wled-target-setup > summary {
+.wled-connection > summary {
   color: var(--muted);
   font-weight: 500;
   font-size: 12px;
@@ -1033,9 +986,6 @@ input[type="color"] {
 }
 .wled-target-setup {
   padding-bottom: 16px;
-}
-.wled-target-setup .wled-remove {
-  margin-top: 10px;
 }
 .wled-editor-tabs {
   display: flex;
@@ -1288,12 +1238,6 @@ input[type="color"] {
   top: 0;
 }
 @media (max-width: 1000px) {
-  .wled-overview {
-    grid-template-columns: 1fr minmax(180px, 40%);
-  }
-  .wled-profile-tools:not([open]) {
-    grid-column: 1 / -1;
-  }
   .wled-workspace {
     padding: 20px;
   }
@@ -1328,8 +1272,10 @@ input[type="color"] {
     padding: 14px;
   }
   .wled-target-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
+    flex-wrap: wrap;
+  }
+  .wled-target-toolbar p {
+    flex-basis: 100%;
   }
   .wled-target-heading {
     align-items: flex-start;
@@ -1439,4 +1385,125 @@ input[type="color"] {
   margin: 8px;
   font-size: 13px;
   color: var(--muted);
+}
+
+/* Shared application controls */
+.profile-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 14px 24px;
+}
+.profile-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.profile-picker label {
+  margin: 0;
+  white-space: nowrap;
+}
+.profile-picker select {
+  width: 210px;
+  max-width: 100%;
+}
+.profile-bar > .hint {
+  flex: 1;
+  margin: 0;
+}
+.profile-bar button {
+  white-space: nowrap;
+}
+dialog {
+  width: min(540px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 20px 80px #0005;
+}
+dialog::backdrop {
+  background: #0008;
+}
+dialog .panel-heading {
+  margin-bottom: 16px;
+}
+.profile-remove-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.profile-remove-row p {
+  flex: 1;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.danger {
+  color: var(--error);
+}
+.wled-target-toolbar p {
+  flex: 1;
+}
+.wled-target-toolbar .wled-remove {
+  border-color: var(--border);
+}
+.wled-target-setup .wled-grid {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+.wled-connection[open] {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--inset);
+}
+.caller-test-controls {
+  align-items: center;
+}
+.caller-test-controls > label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+.caller-test-controls select {
+  width: 165px;
+}
+html[data-embedded="true"] .brand,
+html[data-embedded="true"] #theme-toggle {
+  display: none;
+}
+@media (max-width: 760px) {
+  .profile-bar {
+    padding: 16px;
+  }
+  .profile-bar > .hint {
+    flex-basis: 100%;
+    order: 3;
+  }
+  .profile-picker {
+    flex: 1;
+  }
+  .profile-picker select {
+    width: 100%;
+    min-width: 100px;
+  }
+}
+@media (max-width: 600px) {
+  .wled-target-setup .wled-grid {
+    grid-template-columns: 1fr;
+  }
+  .caller-test-controls > label {
+    flex-basis: 100%;
+  }
+  .caller-test-controls select {
+    flex: 1;
+  }
 }

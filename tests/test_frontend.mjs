@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { api, eventEntries } from "../src/ochecore/static/client.mjs";
+import { api, eventEntries, callerTestState } from "../src/ochecore/static/client.mjs";
 
 function untilAborted(signal) {
   return new Promise((resolve, reject) => {
@@ -190,4 +190,39 @@ test("clearing raw history does not reuse rows from an earlier recording", () =>
   assert.deepEqual(cleared, []);
   const restarted = eventEntries(frames, true, cleared);
   assert.notEqual(restarted[0].key, first[0].key);
+});
+
+test("Caller test waits for the selected voice installation, even if an older pack exists", () => {
+  const state = callerTestState({
+    enabled: true,
+    voice: "new",
+    installed: true,
+    download: { state: "downloading" },
+  });
+  assert.equal(state.disabled, true);
+  assert.equal(state.label, "Downloading voice…");
+  assert.match(state.message, /selected voice package/);
+});
+test("Caller test becomes available only for the installed and applied voice", () => {
+  const status = {
+    enabled: true,
+    voice: "remi",
+    installed: true,
+    download: { state: "idle" },
+  };
+  assert.equal(callerTestState(status).disabled, false);
+  assert.equal(callerTestState(status, { voiceChanged: true }).disabled, true);
+  assert.match(
+    callerTestState(status, { voiceChanged: true }).message,
+    /Apply the selected voice/,
+  );
+  assert.equal(callerTestState({ ...status, installed: false }).disabled, true);
+  assert.equal(callerTestState({ ...status, enabled: false }).disabled, true);
+  assert.equal(callerTestState(status, { dirty: true }).disabled, true);
+  assert.equal(callerTestState(status, { working: true }).disabled, true);
+});
+test("Caller test explains missing and installing voice states", () => {
+  assert.match(callerTestState(null).message, /Choose and download/);
+  const status = { voice: "remi", download: { state: "installing" } };
+  assert.equal(callerTestState(status).label, "Installing voice…");
 });

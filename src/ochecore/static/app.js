@@ -63,7 +63,10 @@ function navigate(focus = false) {
   });
   $("page-title").textContent = title;
   $("page-description").textContent = description;
-  document.title = `${title} · OcheCore`;
+  document.title =
+    document.documentElement.dataset.embedded === "true"
+      ? title
+      : `${title} · OcheCore`;
   if (focus) $("page-title").focus();
   eventRequest += 1;
   refreshEvents();
@@ -533,3 +536,185 @@ $("events-pause").addEventListener("click", () => {
 window.addEventListener("hashchange", () => navigate(true));
 navigate();
 poll(refresh);
+
+// Profiles belong to the service; editors finish their current save before switching.
+export let profileChanging = false;
+const profileEditors = new Map();
+let profiles = null;
+let profileRequest = null;
+let removal = null;
+export function registerProfileEditor(name, editor) {
+  profileEditors.set(name, editor);
+}
+function renderProfiles() {
+  if (!profiles) return;
+  const select = $("app-profile");
+  const signature = JSON.stringify(profiles);
+  if (select.dataset.signature !== signature) {
+    select.replaceChildren(
+      ...profiles.profiles.map((item) => new Option(item.name, item.id)),
+    );
+    select.value = profiles.active_profile;
+    select.dataset.signature = signature;
+  }
+  const current = profiles.profiles.find(
+    (item) => item.id === profiles.active_profile,
+  );
+  $("profile-current").textContent = `Current profile: ${current?.name || ""}`;
+  $("profile-remove").textContent = `Remove "${current?.name || ""}"...`;
+  for (const id of [
+    "app-profile",
+    "profiles-manage",
+    "profile-create",
+    "profile-blank",
+    "profile-remove",
+    "profile-name",
+    "profile-confirm-remove",
+  ])
+    $(id).disabled = profileChanging;
+  $("profile-remove").disabled ||= profiles.profiles.length <= 1;
+  $("profile-remove").title =
+    profiles.profiles.length <= 1 ? "Keep at least one profile." : "";
+  $("profile-create").disabled ||= profiles.profiles.length >= 12;
+  $("profile-blank").disabled ||= profiles.profiles.length >= 12;
+}
+async function refreshProfiles() {
+  if (profileChanging || profileRequest) return profileRequest;
+  profileRequest = (async () => {
+    try {
+      profiles = await api("/api/profiles");
+      renderProfiles();
+    } catch {
+      $("app-profile").disabled = $("profiles-manage").disabled = true;
+    } finally {
+      profileRequest = null;
+    }
+  })();
+  return profileRequest;
+}
+async function changeProfile(path, method, body, expected) {
+  if (profileChanging) return;
+  profileChanging = true;
+  renderProfiles();
+  $("profile-dialog-error").hidden = true;
+  // Inert blocks new edits while pending autosaves complete.
+  document
+    .querySelectorAll(
+      '[data-view="wled"], [data-view="caller"], [data-view="integrations"]',
+    )
+    .forEach((view) => {
+      view.inert = true;
+    });
+  let applied = false;
+  try {
+    await profileRequest;
+    for (const editor of profileEditors.values()) await editor.prepare();
+    for (const editor of profileEditors.values()) editor.lock();
+    const latest = await api("/api/profiles", "GET", undefined, {
+      metadata: true,
+    });
+    if (expected && latest.data.active_profile !== expected)
+      throw new Error(
+        "The active profile changed in another client. Review the selected profile and try again.",
+      );
+    await api(path, method, body, { etag: latest.etag });
+    applied = true;
+    $("profile-name").value = "";
+    $("profile-confirm").close();
+    $("profiles-dialog").close();
+    notice(
+      method === "DELETE"
+        ? "Profile removed. Remaining profile settings applied."
+        : "App profile applied to WLED and Caller.",
+    );
+  } catch (error) {
+    notice(error.message, true);
+    $("profile-dialog-error").textContent = error.message;
+    $("profile-dialog-error").hidden = false;
+    $("profile-confirm").close();
+  } finally {
+    for (const editor of profileEditors.values()) {
+      try {
+        await editor.reload(applied);
+      } catch (error) {
+        notice(error.message, true);
+      }
+    }
+    profileChanging = false;
+    document
+      .querySelectorAll(
+        '[data-view="wled"], [data-view="caller"], [data-view="integrations"]',
+      )
+      .forEach((view) => {
+        view.inert = false;
+      });
+    await refreshProfiles();
+    // Restore the selection if switching was rejected before applying.
+    if (profiles) $("app-profile").value = profiles.active_profile;
+  }
+}
+$("profiles-manage").addEventListener("click", () => {
+  $("profile-dialog-error").hidden = true;
+  $("profiles-dialog").showModal();
+});
+$("profiles-close").addEventListener("click", () =>
+  $("profiles-dialog").close(),
+);
+$("app-profile").addEventListener("change", () =>
+  changeProfile(
+    "/api/profile",
+    "PUT",
+    { id: $("app-profile").value },
+    profiles.active_profile,
+  ),
+);
+for (const [id, source] of [
+  ["profile-create", "current"],
+  ["profile-blank", "blank"],
+]) {
+  $(id).addEventListener("click", () => {
+    const name = $("profile-name").value.trim();
+    if (!name) return $("profile-name").focus();
+    changeProfile(
+      "/api/profiles",
+      "POST",
+      { name, source },
+      profiles.active_profile,
+    );
+  });
+}
+$("profile-remove").addEventListener("click", () => {
+  removal = profiles.profiles.find(
+    (item) => item.id === profiles.active_profile,
+  );
+  if (!removal) return;
+  $("profile-confirm-title").textContent = `Remove "${removal.name}"?`;
+  const fallback = profiles.profiles.find((item) => item.id !== removal.id);
+  $("profile-confirm-description").textContent =
+    `"${fallback.name}" will become active. This cannot be undone.`;
+  $("profile-confirm").showModal();
+});
+$("profile-cancel").addEventListener("click", () =>
+  $("profile-confirm").close(),
+);
+$("profile-confirm-remove").addEventListener("click", () => {
+  if (removal)
+    changeProfile(
+      `/api/profiles/${encodeURIComponent(removal.id)}`,
+      "DELETE",
+      undefined,
+      removal.id,
+    );
+});
+poll(refreshProfiles);
+
+poll(async () => {
+  try {
+    const settings = await api("/api/ui");
+    window.dispatchEvent(
+      new CustomEvent("ochecore:ui-settings", { detail: settings }),
+    );
+  } catch {
+    /* The connection banner already reports service availability. */
+  }
+});

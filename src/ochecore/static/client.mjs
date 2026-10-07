@@ -89,3 +89,57 @@ export function eventEntries(events, raw, previous = []) {
     return { event, signature, key };
   });
 }
+
+export function callerTestState(
+  status,
+  { voiceChanged = false, dirty = false, working = false } = {},
+) {
+  const preparing = ["downloading", "installing"].includes(
+    status?.download?.state,
+  );
+  if (voiceChanged)
+    return {
+      disabled: true,
+      label: "Play test",
+      message: "Apply the selected voice above before testing it.",
+    };
+  if (preparing)
+    return {
+      disabled: true,
+      label:
+        status.download.state === "installing"
+          ? "Installing voice…"
+          : "Downloading voice…",
+      message:
+        "Waiting for the selected voice package. Play test will be available when installation finishes.",
+    };
+  if (!status?.voice)
+    return {
+      disabled: true,
+      label: "Play test",
+      message: "Choose and download a voice above.",
+    };
+  if (!status.installed)
+    return {
+      disabled: true,
+      label: "Voice unavailable",
+      message: "Install or repair the selected voice package before testing.",
+    };
+  if (!status.enabled)
+    return {
+      disabled: true,
+      label: "Play test",
+      message: "Enable Caller in Integrations to test this voice.",
+    };
+  if (dirty)
+    return {
+      disabled: true,
+      label: "Saving settings…",
+      message: "Waiting for your settings to save.",
+    };
+  return {
+    disabled: working,
+    label: working ? "Please wait…" : "Play test",
+    message: "Uses the installed voice and your saved output settings.",
+  };
+}

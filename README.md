@@ -24,10 +24,12 @@ OcheCore/
 │       ├── cli.py           # terminal controls over the service API
 │       ├── config.py        # validated settings
 │       ├── runtime.py       # connection lifecycle
+│       ├── profiles.py      # shared WLED and Caller profiles
 │       ├── storage.py       # atomic persistence
 │       ├── events.py        # parsing, game event normalization and bounded dispatch
 │       ├── api/
 │       │   ├── http.py      # HTTP controls, health checks and optional UI route
+│       │   ├── ui.py        # saved appearance and embedding controls
 │       │   └── websocket.py # live event streams and subscriber cleanup
 │       ├── autodarts/
 │       │   ├── auth.py
@@ -189,8 +191,9 @@ session; it does not revoke other sessions on your account.
 Open `http://127.0.0.1:9180` when the service is running.
 
 Both themes use [Oche's](https://github.com/mondeggo/oche) red and cream identity with neutral surfaces.
-Use **Dark theme** at the bottom of the sidebar to switch to light mode. The browser remembers
-your choice. Content is centered in the space beside the sidebar, with text left-aligned.
+Use **Dark theme** at the bottom of the sidebar to switch modes. The service saves the theme
+in `data/ui.json` and shares it with all connected browsers. Content is centered beside the
+sidebar, with text left-aligned.
 The [Oche palette handoff](docs/oche-theme.css) contains matching dark/light CSS variables and
 component mapping notes for the Oche app. It is a reference file, not loaded by OcheCore.
 
@@ -204,7 +207,7 @@ component mapping notes for the Oche app. It is a reference file, not loaded by 
   below it in the sidebar; disabling them keeps their saved configuration. Changes through the
   CLI or another browser also update navigation.
 - **WLED** manages controllers, lighting targets, phase colours, game effects and matrix
-  scores. Changes save automatically; named profiles keep different colours and effects.
+  scores. Changes save automatically to the selected app profile.
   Preview buttons sit beside the settings and work with unsaved changes.
 - **Caller** selects and installs voices, chooses host/browser output and tests announcements.
   Saving a voice downloads only that pack and removes the old cache once it is ready.
@@ -214,6 +217,63 @@ The interface uses plain HTML, CSS and JavaScript in `src/ochecore/static/`, wit
 build step. Navigation stays in the browser; all controls use the same API as the terminal.
 Settings and login data are saved as JSON in `data/`; there is no database.
 
+### Embed in Oche
+
+With OcheCore running, enable the compact interface and allow Oche's exact origin:
+
+```powershell
+uv run ochecore ui --embedded --parent-origin http://localhost:3000 --theme dark
+uv run ochecore ui --theme light
+uv run ochecore ui
+```
+
+Embed `http://localhost:9180/` in an iframe. Embedded mode hides the OcheCore branding and
+theme toggle; Oche can set the shared theme through the API. Run this in the parent page
+at the configured origin:
+
+```javascript
+await fetch("http://localhost:9180/api/ui", {
+  method: "PATCH",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ theme: "dark" }),
+});
+```
+
+The allowed parent can read `/api/ui` and change only its `theme`. Embedding and parent-origin
+changes use the CLI or a request from OcheCore's own origin. Use `ui --no-embedded` to return
+to standalone mode. These settings persist without a restart; `serve` accepts the same flags
+as startup overrides. Disabling the web UI with `--no-ui` still leaves its control API available.
+
+## Application profiles
+
+The **App profile** selector applies lighting and Caller settings together. Open **Manage profiles**
+to **Copy current**, **Create from scratch** or remove a profile. Removal names the selected profile
+and asks for confirmation. Creation selects the new profile;
+at least one profile must remain.
+
+Each profile remembers phase colours, event effects, player colours, matrix appearance and all
+Caller settings, including enabled state, voice, output and volume. A blank profile has zero lighting
+brightness, no event/player effects and Caller disabled with no voice selected. Device addresses,
+zones, geometry, WLED automation switches and the AutoDarts account stay shared. Adding or removing
+a zone updates all profiles. Switching to another voice may download it again; wait for an active
+voice installation to finish before switching.
+
+```powershell
+uv run ochecore profiles list
+uv run ochecore profiles create Practice
+uv run ochecore profiles create Quiet --source blank
+uv run ochecore profiles use Default
+uv run ochecore profiles delete Quiet
+```
+
+Names and IDs both work with `use` and `delete`. `wled profiles` remains a compatibility alias
+and now also changes Caller settings.
+
+Settings save atomically in `data/profiles.json`. Existing WLED profiles keep their IDs, names,
+colours and active selection; each initially receives the current Caller settings. The first edit
+saves this migration. Original `wled.json` and `caller.json` files remain untouched backups and
+are no longer used once `profiles.json` exists.
+
 ## WLED lighting and matrix scores
 
 Enable **WLED** in **All integrations**, then open its **Settings** or sidebar entry.
@@ -222,9 +282,10 @@ controllers by name and address. CLI/API discovery also works while automation i
 You can also use **Add manually** to enter an HTTP address in **Controller settings**. **Check connection** uses
 the address currently in the form, including an unsaved address, and loads segments and effects.
 Valid edits save after a short pause; incomplete fields or failed saves keep the draft visible.
-The save indicator offers retry after errors. Add a target; **Target setup** contains its segment and mode.
+The save indicator offers retry after errors. Each zone shows its name, segment, mode and remove
+button above the lighting rules. Native effects load from the controller after a connection check.
 Output cards show GPIO pins, colour/white capability, LED type and length. Select an
-output to edit its targets, or **All targets** to see the whole controller. Selection changes
+output to edit its targets, or **All zones** to see the whole controller. Selection changes
 only the view. **Add zone on GPIO …** uses an available segment on that output; an already
 used segment starts with the new target disabled to avoid overlapping rules.
 
@@ -252,17 +313,6 @@ Existing targets whose pixels OcheCore controls can be restored from their saved
 Colour controls use the device's [effect metadata](https://kno.wled.ge/interfaces/json-api/#effect-metadata)
 to hide the primary colour when an effect does not use it. Older firmware keeps the colour
 control visible when metadata is unavailable.
-
-### Lighting profiles
-
-Open **Manage profiles**, enter a name, then choose **Create blank** or **Copy current**.
-Blank profiles keep your devices and targets, with all phase/matrix brightness at zero and
-no event or player rules. Copying preserves the current lighting rules. Creation selects the
-new profile immediately. **Remove** deletes the selected profile; at least one must remain.
-Selecting a profile applies it immediately. Profiles share device addresses, target geometry,
-and automation switches; each stores phase appearances, event effects, player colours and matrix appearance.
-Existing installations start with a **Default** profile. Settings persist in `data/wled.json`.
-Adding or removing a target updates all profiles; pixel and matrix targets use solid colours.
 
 **Lights off** controls master power and pauses automatic updates for that device. **Lights
 on** resumes its saved automation if enabled. Disabling the integration keeps the lights'
@@ -326,10 +376,6 @@ uv run ochecore wled test board --target ring --player 1
 uv run ochecore wled status
 uv run ochecore wled off board
 uv run ochecore wled on board
-uv run ochecore wled profiles create Quiet
-uv run ochecore wled profiles create Fresh --blank
-uv run ochecore wled profiles use Default
-uv run ochecore wled profiles
 uv run ochecore game
 uv run ochecore wled disable board
 ```
@@ -342,7 +388,7 @@ The UI calls these zones; CLI/API configuration retains the `targets` field.
 `wled enable` / `disable` controls event automation; `wled on` / `off` controls power.
 Without a device ID these commands affect the whole integration or all devices. To edit settings,
 save the output of `ochecore wled config` to a JSON file and reload it with `--file`. Settings
-are validated and saved atomically in `data/wled.json`; no restart is required. Per-target
+are validated and saved atomically in `data/profiles.json`; no restart is required. Per-target
 `enabled`, phase appearances and event effects use the same configuration through API and UI.
 An empty `effects` object disables temporary effects for a target. Use identical phase colours
 and no effects for steady illumination. Standard Docker commands use
@@ -382,7 +428,7 @@ It does not restore a previous WLED preset. A disconnected controller cannot rec
 disabled ones, and reports failures per device. To preview a device JSON definition without
 saving, use `ochecore wled test --file device.json --target ring --phase ready`. Add
 `--event bust` to preview a game effect. The file contains one device object from the config's
-`devices` list. `ochecore wled profiles delete Quiet` removes a profile; keep at least one.
+`devices` list.
 
 ### Device discovery
 
@@ -413,6 +459,10 @@ Non-empty connection fields from these sources override saved settings and lock 
 through the API, CLI and UI. Leave them empty to configure through either client; settings are
 saved in `data/connection.json`. Tokens are stored separately.
 
+UI settings are saved in `data/ui.json`. Optional `ui_embedded`, `ui_theme` and `ui_parent_origin`
+startup values override those saved values when the service starts. Omit them to keep changes
+made through `ochecore ui` or `PATCH /api/ui` across restarts.
+
 Copy `.env.example` to `.env` for environment-based setup. Restart after changing YAML or
 `.env`. Docker fixes the container port to 9180 and data directory to `/data`;
 `OCHECORE_PORT` controls the published host port.
@@ -429,6 +479,11 @@ on load and omitted on the next configuration save. See the
 | `GET /readyz` | 200 if the cloud stream is connected, otherwise 503 |
 | `GET /api/status` | Connection states and counters without secrets |
 | `GET /api/game` | Current phase, reason, player and display scores |
+| `GET /api/profiles` | Active application profile and saved profile names/IDs |
+| `POST /api/profiles` | Create and select a profile; `{"name":"Quiet","source":"current"}` or `source: "blank"` |
+| `PUT /api/profile` | Apply lighting and Caller settings; `{"id":"default"}` |
+| `DELETE /api/profiles/{id}` | Remove a profile; the last profile is retained |
+| `GET /api/ui`, `PATCH /api/ui` | Saved `embedded`, `parent_origin` and `theme` settings |
 | `GET /api/wled`, `PUT /api/wled` | Saved WLED controllers and target configuration |
 | `PATCH /api/wled` | Update only supplied top-level fields: `enabled` or the complete `devices` list; omitted fields stay unchanged |
 | `GET /api/wled/status` | Device connectivity, errors, capabilities and current phase |
@@ -438,9 +493,6 @@ on load and omitted on the next configuration save. See the
 | `POST /api/wled/preview` | Temporary unsaved test: `device`, `target_id`, optional `phase`, `event`, `player`, `value`, `duration`; responds after restoration |
 | `POST /api/wled/{device_id}/power` | Set master power with `{"on":false}` or `{"on":true}`; keeps saved rules |
 | `POST /api/wled/power` | Set master power on all saved devices; same body, per-device results |
-| `POST /api/wled/profiles` | Create and select a profile; body `{"name":"Quiet","source":"current"}` or `source: "blank"`; omitted source copies current |
-| `PUT /api/wled/profile` | Select a profile; body `{"id":"default"}` |
-| `DELETE /api/wled/profiles/{profile_id}` | Remove a profile; the last profile is retained |
 | `POST /api/wled/{device_id}/test` | Timed preview: `target_id`, optional `phase`, `event`, `player`, `value`, `duration` |
 | `GET /api/config`, `PUT /api/config` | Public connection settings |
 | `GET /api/boards` | Account boards and current selection; requires login |
@@ -452,11 +504,14 @@ on load and omitted on the next configuration save. See the
 | `WS /events/raw` | Live incoming AutoDarts frames |
 | `/docs` | API documentation when UI is enabled; schema always at `/openapi.json` |
 
-WLED configuration and status responses include an `ETag`. Send it as `If-Match` when
-replacing settings or changing profiles to reject stale writes with HTTP 412. The UI keeps
+Profiles, WLED and Caller configuration/status responses include an `ETag`. Send the relevant
+resource's value as `If-Match` when editing settings; profile operations use the value from
+`GET /api/profiles`. Stale writes return HTTP 412. The UI keeps
 the unsaved draft visible until you reload after a conflict. Atomic device updates use
 `PATCH /api/wled/devices/{id}` with `{"enabled":false}`; add a controller with
 `POST /api/wled/devices`. Clients that omit `If-Match` retain their existing behavior.
+The former `/api/wled/profiles` and `/api/wled/profile` mutations remain aliases for application
+profiles and apply to Caller too.
 
 POST/PUT/PATCH requests require `Content-Type: application/json`; use `{}` for login/logout.
 WebSockets use native JSON, not Socket.IO. Slow subscribers have bounded queues and lose

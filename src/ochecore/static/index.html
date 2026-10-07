@@ -85,6 +85,63 @@
         <a href="#autodarts">Connection details</a>
       </div>
 
+      <section class="panel profile-bar" aria-label="Application profile">
+        <div class="profile-picker">
+          <label for="app-profile">App profile</label>
+          <select id="app-profile" disabled></select>
+        </div>
+        <p class="hint">Lighting and Caller settings, together.</p>
+        <button id="profiles-manage" type="button" disabled>
+          Manage profiles
+        </button>
+      </section>
+      <dialog id="profiles-dialog" aria-labelledby="profiles-title">
+        <div class="panel-heading">
+          <h2 id="profiles-title">App profiles</h2>
+          <button id="profiles-close" type="button" aria-label="Close profiles">
+            Close
+          </button>
+        </div>
+        <p class="hint">
+          Each profile remembers lighting colours, effects and Caller settings.
+          Devices and lighting zones are shared.
+        </p>
+        <label for="profile-name">New profile name</label>
+        <input
+          id="profile-name"
+          maxlength="60"
+          placeholder="Practice or match night"
+        />
+        <div class="actions">
+          <button id="profile-create" type="button">Copy current</button>
+          <button id="profile-blank" type="button">Create from scratch</button>
+        </div>
+        <p class="hint">
+          From scratch starts with lights off, no lighting rules and Caller off.
+        </p>
+        <div class="profile-remove-row">
+          <p id="profile-current"></p>
+          <button id="profile-remove" class="danger" type="button">
+            Remove profile…
+          </button>
+        </div>
+        <p id="profile-dialog-error" class="error" role="status" hidden></p>
+      </dialog>
+      <dialog id="profile-confirm" aria-labelledby="profile-confirm-title">
+        <h2 id="profile-confirm-title">Remove profile?</h2>
+        <p id="profile-confirm-description"></p>
+        <p class="hint">
+          This removes its lighting and Caller settings. Your devices and zones
+          are kept.
+        </p>
+        <div class="actions">
+          <button id="profile-cancel" type="button" autofocus>Cancel</button>
+          <button id="profile-confirm-remove" class="danger" type="button">
+            Remove profile
+          </button>
+        </div>
+      </dialog>
+
       <section data-view="overview" aria-label="Overview">
         <div class="panel board-panel">
           <div class="panel-heading">
@@ -292,45 +349,6 @@
             <strong id="wled-phase">Waiting</strong>
             <p id="wled-reason" class="hint">Loading service state…</p>
           </div>
-          <div class="wled-profile-picker">
-            <label for="wled-profile">Lighting profile</label>
-            <select id="wled-profile" disabled></select>
-            <span class="hint"
-              >Colours and effects only. Devices and zones are shared.</span
-            >
-          </div>
-          <details class="wled-profile-tools">
-            <summary>Manage profiles</summary>
-            <label for="wled-profile-name">New profile name</label>
-            <div class="wled-profile-actions">
-              <input
-                id="wled-profile-name"
-                maxlength="60"
-                placeholder="Practice or match night"
-              />
-              <div class="wled-profile-buttons">
-                <button id="wled-profile-blank" type="button" disabled>
-                  Create blank
-                </button>
-                <button id="wled-profile-create" type="button" disabled>
-                  Copy current
-                </button>
-                <button
-                  id="wled-profile-delete"
-                  type="button"
-                  aria-label="Remove current lighting profile"
-                  disabled
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-            <p class="hint">
-              Blank starts with lights off and no rules. Copy uses the current
-              profile. Both keep your devices, lighting zones and automation
-              switches.
-            </p>
-          </details>
         </div>
         <p id="wled-error" class="error" role="status" hidden></p>
         <form id="wled-form" class="panel wled-workspace">
@@ -358,22 +376,6 @@
             <p>Find a WLED controller on your network, or add its address.</p>
           </div>
           <div id="wled-device-editor" hidden>
-            <div class="wled-controller-bar">
-              <div id="wled-device-status" class="hint" role="status"></div>
-              <label class="check-label"
-                ><input id="wled-device-enabled" type="checkbox" /> Automatic
-                lighting</label
-              >
-              <div
-                class="wled-power"
-                role="group"
-                aria-label="Controller power"
-              >
-                <button id="wled-power-on" type="button">Lights on</button>
-                <button id="wled-power-off" type="button">Lights off</button>
-              </div>
-              <button id="wled-probe" type="button">Check connection</button>
-            </div>
             <details id="wled-connection" class="wled-connection">
               <summary>Controller settings</summary>
               <div class="wled-grid">
@@ -406,6 +408,23 @@
                 controller without changing your saved rules.
               </p>
             </details>
+            <div class="wled-controller-bar">
+              <div id="wled-device-status" class="hint" role="status"></div>
+              <label class="check-label"
+                ><input id="wled-device-enabled" type="checkbox" /> Automatic
+                lighting</label
+              >
+              <div
+                class="wled-power"
+                role="group"
+                aria-label="Controller power"
+              >
+                <button id="wled-power-on" type="button">Lights on</button>
+                <button id="wled-power-off" type="button">Lights off</button>
+              </div>
+              <button id="wled-probe" type="button">Check connection</button>
+            </div>
+
             <div id="wled-outputs-section" hidden>
               <div class="panel-heading">
                 <h2>Choose an output</h2>
@@ -447,13 +466,15 @@
             <summary data-title>Lighting zone</summary>
             <div class="wled-target-toolbar">
               <p data-output-note class="hint"></p>
+              <button data-remove type="button" class="wled-remove">
+                Remove zone
+              </button>
               <label class="check-label"
                 ><input data-field="enabled" type="checkbox" /> Respond to
                 game</label
               >
             </div>
-            <details class="wled-target-setup">
-              <summary>Zone setup</summary>
+            <div class="wled-target-setup">
               <div class="wled-grid">
                 <label>
                   Name
@@ -498,10 +519,7 @@
                 Use a segment configured in WLED. LED ranges start at zero
                 within that segment.
               </p>
-              <button data-remove type="button" class="wled-remove">
-                Remove zone
-              </button>
-            </details>
+            </div>
             <p data-geometry-warning class="error" role="status" hidden></p>
             <div
               class="wled-editor-tabs"
@@ -653,7 +671,7 @@
       </section>
 
       <section data-view="caller" aria-label="Caller settings" hidden>
-        <form id="caller-form" class="panel">
+        <form id="caller-form" class="panel" inert>
           <div class="panel-heading">
             <h2>Voice</h2>
             <span id="caller-state" class="badge">Choose a voice</span>
@@ -763,7 +781,7 @@
             Tests use your saved voice and output settings. Stop sound cancels
             current audio; future game calls remain enabled.
           </p>
-          <div class="actions">
+          <div class="actions caller-test-controls">
             <button id="caller-browser" type="button">Enable sound here</button>
             <label
               >Call<select id="caller-test-call">
@@ -777,6 +795,12 @@
             <button id="caller-test" type="button" disabled>Play test</button>
             <button id="caller-stop" type="button">Stop sound</button>
           </div>
+          <p
+            id="caller-test-status"
+            class="hint"
+            role="status"
+            aria-live="polite"
+          ></p>
           <p id="caller-recent" class="hint" role="status">No calls yet.</p>
         </div>
       </section>

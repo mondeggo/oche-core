@@ -1,5 +1,11 @@
-import { $, api, poll } from "./client.mjs";
-import { page, notice, setIntegrationEnabled } from "./app.js";
+import { $, api, poll, callerTestState } from "./client.mjs";
+import {
+  page,
+  notice,
+  setIntegrationEnabled,
+  registerProfileEditor,
+  profileChanging,
+} from "./app.js";
 
 /* The service selects calls. This optional player only plays the supplied local clips. */
 (() => {
@@ -17,6 +23,8 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
     catalogueVersion = "",
     stateRevision = 0;
   const pendingSettings = {};
+  let configurationETag = null;
+  let saveConflict = false;
   let context = null,
     socket = null,
     source = null,
@@ -58,6 +66,7 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
   }
 
   function voiceState() {
+    $("caller-form").inert = !config;
     $("caller-language").disabled = $("caller-voice").disabled = working;
     const voice = voices.find((v) => v.id === $("caller-voice").value);
     const download = current?.download;
@@ -94,8 +103,22 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
           : "Volume, output and announcements save automatically.");
     $("caller-autosave").classList.toggle("error", !!settingsError);
     $("caller-settings-retry").hidden = !settingsError;
-    $("caller-test").disabled =
-      working || !current?.enabled || !current?.installed || dirty;
+    const test = callerTestState(current, { voiceChanged, dirty, working });
+    $("caller-test").disabled = test.disabled;
+    $("caller-test").textContent = test.label;
+    $("caller-test").setAttribute(
+      "aria-busy",
+      String(["downloading", "installing"].includes(current?.download?.state)),
+    );
+    const installedVoice = voices.find((item) => item.id === current?.voice);
+    $("caller-test-status").textContent =
+      !test.disabled && installedVoice
+        ? `${installedVoice.name} · ${test.message}`
+        : test.message;
+    $("caller-test-call").disabled = test.disabled;
+    $("caller-settings-retry").textContent = saveConflict
+      ? "Discard changes and reload"
+      : "Retry saving";
   }
 
   function fill(value) {
@@ -121,7 +144,13 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
   }
 
   function saveSettings() {
-    if (working || settingsSave || !Object.keys(pendingSettings).length) return;
+    if (
+      working ||
+      settingsSave ||
+      saveConflict ||
+      !Object.keys(pendingSettings).length
+    )
+      return;
     if (!$("caller-form").checkValidity()) {
       settingsError = "Enter a volume from 0 to 100 to save your settings.";
       voiceState();
@@ -130,7 +159,11 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
     const values = { ...pendingSettings };
     settingsSave = (async () => {
       try {
-        await api("/api/caller", "PATCH", values);
+        const saved = await api("/api/caller", "PATCH", values, {
+          etag: configurationETag,
+          metadata: true,
+        });
+        configurationETag = saved.etag;
         stateRevision += 1;
         Object.assign(config, values);
         for (const [key, value] of Object.entries(values)) {
@@ -138,6 +171,7 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
         }
         settingsError = "";
       } catch (cause) {
+        saveConflict = cause.status === 412;
         settingsError = `Not saved: ${cause.message}`;
       } finally {
         settingsSave = null;
@@ -245,12 +279,17 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
     };
   }
 
-  async function refreshCaller() {
-    if (working || polling) return polling;
+  async function refreshCaller(force = false) {
+    if (working || polling || (profileChanging && force !== true))
+      return polling;
     const revision = stateRevision;
     polling = (async () => {
       try {
-        current = await api("/api/caller/status");
+        const response = await api("/api/caller/status", "GET", undefined, {
+          metadata: true,
+        });
+        current = response.data;
+        if (!config && !dirty) configurationETag = response.etag;
         setIntegrationEnabled("caller", current.enabled);
         $("caller-toggle").disabled = false;
         $("caller-toggle").setAttribute(
@@ -278,15 +317,16 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
           const version = `${current.voice}:${current.installed}:${current.download.state}`;
           const [catalogue, settings] = await Promise.all([
             catalogueVersion !== version ? api("/api/caller/voices") : voices,
-            api("/api/caller"),
+            api("/api/caller", "GET", undefined, { metadata: true }),
           ]);
           voices = catalogue;
           catalogueVersion = version;
-          if (revision === stateRevision) fill(settings);
+          if (revision === stateRevision && !dirty) {
+            fill(settings.data);
+            configurationETag = settings.etag;
+          }
         }
         voiceState();
-        $("caller-test").disabled =
-          !current.enabled || !current.installed || dirty;
         const last = current.recent_calls.at(-1);
         $("caller-recent").textContent = current.missing_sounds.length
           ? `Not in this pack: ${current.missing_sounds.join(", ")}`
@@ -309,7 +349,7 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
   }
 
   async function change(work) {
-    if (working) return;
+    if (working || profileChanging) return;
     working = true;
     clearTimeout(settingsTimer);
     $("caller-toggle").disabled = true;
@@ -330,8 +370,22 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
 
   $("caller-toggle").addEventListener("click", () =>
     change(async () => {
-      const enabled = !current.enabled;
-      await api("/api/caller", "PATCH", { enabled });
+      if (dirty)
+        throw new Error(
+          "Apply your Caller changes before toggling the integration.",
+        );
+      const latest = await api("/api/caller", "GET", undefined, {
+        metadata: true,
+      });
+      const enabled = !latest.data.enabled;
+      const saved = await api(
+        "/api/caller",
+        "PATCH",
+        { enabled },
+        { etag: latest.etag, metadata: true },
+      );
+      configurationETag = saved.etag;
+      fill({ ...latest.data, enabled });
       setIntegrationEnabled("caller", enabled);
       if (enabled) location.hash = "caller";
     }),
@@ -358,12 +412,24 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
   }
   $("caller-form").addEventListener("input", editSettings);
   $("caller-form").addEventListener("change", editSettings);
-  $("caller-settings-retry").addEventListener("click", saveSettings);
+  $("caller-settings-retry").addEventListener("click", async () => {
+    if (!saveConflict) return saveSettings();
+    Object.keys(pendingSettings).forEach((key) => delete pendingSettings[key]);
+    saveConflict = false;
+    settingsError = "";
+    voiceChanged = dirty = false;
+    catalogueSignature = "";
+    await refreshCaller();
+  });
   $("caller-form").addEventListener("submit", (event) => {
     event.preventDefault();
     change(async () => {
       const values = { voice: $("caller-voice").value };
-      await api("/api/caller", "PATCH", values);
+      const saved = await api("/api/caller", "PATCH", values, {
+        etag: configurationETag,
+        metadata: true,
+      });
+      configurationETag = saved.etag;
       stateRevision += 1;
       voiceChanged = false;
       dirty = !!Object.keys(pendingSettings).length;
@@ -377,6 +443,8 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
       await api(
         `/api/caller/voices/${encodeURIComponent(current.voice)}/install`,
         "POST",
+        undefined,
+        { etag: configurationETag },
       );
     }),
   );
@@ -405,6 +473,33 @@ import { page, notice, setIntegrationEnabled } from "./app.js";
       await api("/api/caller/stop", "POST");
     }),
   );
+  registerProfileEditor("Caller", {
+    async prepare() {
+      if (working) throw new Error("Wait for the Caller action to finish.");
+      await polling;
+      clearTimeout(settingsTimer);
+      await settingsSave;
+      await saveSettings();
+      if (voiceChanged)
+        throw new Error(
+          "Apply your selected Caller voice before changing profiles.",
+        );
+      if (Object.keys(pendingSettings).length)
+        throw new Error(settingsError || "Save your Caller changes first.");
+    },
+    lock() {
+      $("caller-form").inert = true;
+    },
+    async reload(applied) {
+      $("caller-form").inert = false;
+      if (applied) {
+        catalogueSignature = "";
+        stateRevision += 1;
+      }
+      await refreshCaller(true);
+      voiceState();
+    },
+  });
   window.addEventListener("hashchange", refreshCaller);
   window.addEventListener("pagehide", () => {
     stopAudio();
