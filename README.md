@@ -610,7 +610,7 @@ package visibility. See [GitHub's container registry guide](https://docs.github.
 For example, pull the release for your platform:
 
 ```sh
-docker pull ghcr.io/mondeggo/oche-core:0.1.1
+docker pull ghcr.io/mondeggo/oche-core:0.1.2
 ```
 
 Downloads also remain in the workflow run's **Artifacts** section for 14 days. Install a wheel
