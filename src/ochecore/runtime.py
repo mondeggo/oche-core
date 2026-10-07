@@ -8,6 +8,7 @@ from ochecore.config import ConnectionConfig, Settings
 from ochecore.events import EventBus, RawEventRecorder
 from ochecore.integrations.caller.service import Caller
 from ochecore.integrations.wled.service import WLED
+from ochecore.profiles import Profiles
 from ochecore.storage import write_private_json
 
 
@@ -23,6 +24,7 @@ class Runtime:
         self._create_connections()
         self.wled = WLED(settings.data_dir / "wled.json", http, self.bus, self.game_state)
         self.caller = Caller(settings.data_dir, http, self.bus, self.game_state)
+        self.profiles = Profiles(settings.data_dir / "profiles.json", self.wled, self.caller)
 
     def game_state(self) -> dict:
         return self.cloud.game_state()

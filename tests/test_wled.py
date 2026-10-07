@@ -53,6 +53,120 @@ def test_effect_color_controls_follow_device_metadata(metadata, expected):
     assert effect_colors(metadata) == expected
 
 
+@pytest.mark.parametrize("combined_effects", [None, [], {}, "Solid", ["Solid"]])
+async def test_probe_loads_full_effect_catalogue_when_combined_response_is_incomplete(
+    combined_effects,
+):
+    snapshot = capabilities()
+    snapshot.pop("effects")
+    snapshot["info"]["fxcount"] = 5
+    if combined_effects is not None:
+        snapshot["effects"] = combined_effects
+    names = ["Solid", "Blink", "RSVD", "-", "Rainbow"]
+    definitions = ["!;!;;", "!,!;!,!;;", "", "", "!;;"]
+    requested = []
+
+    def handler(request):
+        requested.append(request)
+        if request.url.path == "/json":
+            return httpx.Response(200, json=snapshot)
+        if request.url.path == "/json/eff":
+            return httpx.Response(200, json=names)
+        if request.url.path == "/json/fxdata":
+            return httpx.Response(200, json=definitions)
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        info = await inspect_device(http, device(), metadata=True)
+    assert info["effects"] == names
+    assert info["effect_colors"][1] == ["Colour", "Background", None]
+    assert info["effect_colors"][4] == [None, None, None]
+    assert sum(request.url.path == "/json/eff" for request in requested) == 1
+    assert all(request.method == "GET" for request in requested)
+    board = device()
+    board.targets[0].phases.ready.effect = 4
+    validate_capabilities(board, info)
+    for reserved in (2, 3):
+        board.targets[0].phases.ready.effect = reserved
+        with pytest.raises(ConnectionProblem, match="native effect is unavailable"):
+            validate_capabilities(board, info)
+
+
+async def test_worker_keeps_native_effects_valid_when_every_snapshot_omits_names():
+    snapshot = capabilities()
+    snapshot.pop("effects")
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/json":
+            return httpx.Response(200, json=snapshot)
+        if request.url.path == "/json/eff":
+            return httpx.Response(200, json=["Solid", "Blink", "Breathe"])
+        return httpx.Response(404)
+
+    board = device()
+    board.targets[0].phases.ready.effect = 2
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        worker = DeviceWorker(board, http, EventBus(), lambda: {})
+        for refresh in (True, False):
+            info = await worker.probe(refresh=refresh)
+            assert info["effects"] == ["Solid", "Blink", "Breathe"]
+    assert calls.count("/json/eff") == 2
+
+
+@pytest.mark.parametrize("names", [["Solid"], ["Solid", "Blink", "RSVD"]])
+async def test_complete_combined_effect_catalogue_does_not_need_an_extra_request(names):
+    snapshot = capabilities()
+    snapshot["effects"] = names
+    snapshot["info"]["fxcount"] = len(names)
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(200, json=snapshot)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        info = await inspect_device(http, device())
+    assert info["effects"] == names and calls == ["/json"]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(503),
+        httpx.Response(200, json={}),
+        httpx.Response(200, json=[]),
+        httpx.Response(200, json=["Solid", 1]),
+        httpx.Response(200, json=["Solid", ""]),
+        httpx.Response(200, json=["Solid"]),
+    ],
+)
+async def test_missing_effect_enumeration_is_an_error_instead_of_solid_only(response):
+    snapshot = capabilities()
+    snapshot.pop("effects")
+    snapshot["info"]["fxcount"] = 2
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: (
+                httpx.Response(200, json=snapshot) if request.url.path == "/json" else response
+            )
+        )
+    ) as http:
+        with pytest.raises(ConnectionProblem, match="effect"):
+            await inspect_device(http, device())
+
+
+@pytest.mark.parametrize("mode", ["pixels", "matrix"])
+def test_enumerating_native_effects_does_not_enable_them_for_individual_pixel_targets(mode):
+    with pytest.raises(ValidationError, match="whole-segment target"):
+        device(
+            targets=[
+                {"id": "ring", "name": "Ring", "mode": mode, "phases": {"ready": {"effect": 1}}}
+            ]
+        )
+
+
 def controller_outputs():
     return [
         {"start": 0, "len": 60, "pin": [16], "type": 22},

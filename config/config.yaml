@@ -10,6 +10,10 @@ api_base_url: https://api.autodarts.com
 host: 0.0.0.0
 port: 9180
 ui_enabled: true
+# Optional startup overrides. Omit to keep the saved `ochecore ui` settings.
+# ui_embedded: true
+# ui_parent_origin: http://localhost:3000
+# ui_theme: dark
 data_dir: ./data
 request_timeout: 10
 reconcile_interval: 30

@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ochecore import __version__
+from ochecore.api.ui import render_index
 from ochecore.config import ConnectionConfig
 from ochecore.events import DebugRecording, Event
 from ochecore.integrations.caller.service import CallerConfig, CallerTest
@@ -28,19 +29,32 @@ class DeviceEnabled(BaseModel):
     enabled: bool
 
 
-def wled_revision(runtime) -> str:
-    data = json.dumps(runtime.wled.config.model_dump(mode="json"), sort_keys=True).encode()
-    return f'"{hashlib.sha256(data).hexdigest()}"'
+def configuration_revision(runtime, request: Request) -> str:
+    path = request.url.path
+    if path.startswith("/api/wled"):
+        data = runtime.wled.config.model_dump(mode="json")
+    elif path.startswith("/api/caller"):
+        data = {
+            "active_profile": runtime.wled.config.active_profile,
+            "config": runtime.caller.config.model_dump(mode="json"),
+        }
+    else:
+        return runtime.profiles.revision
+    content = json.dumps(data, sort_keys=True).encode()
+    return f'"{hashlib.sha256(content).hexdigest()}"'
 
 
-def check_wled_revision(request: Request, runtime) -> None:
+def check_revision(request: Request, runtime) -> None:
     expected = request.headers.get("if-match")
     if (
         expected
         and expected != "*"
-        and wled_revision(runtime) not in {value.strip() for value in expected.split(",")}
+        and configuration_revision(runtime, request)
+        not in {value.strip() for value in expected.split(",")}
     ):
-        raise HTTPException(412, "WLED settings changed in another client. Reload and try again.")
+        raise HTTPException(
+            412, "Profile settings changed in another client. Reload and try again."
+        )
 
 
 def same_origin(origin: str | None, host: str, scheme: str) -> bool:
@@ -56,8 +70,8 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
     if static_dir is not None:
 
         @router.get("/", include_in_schema=False)
-        async def index():
-            return FileResponse(static_dir / "index.html")
+        async def index(request: Request):
+            return render_index(static_dir / "index.html", request.app.state.ui.config)
 
     @router.get("/healthz")
     async def health():
@@ -91,23 +105,24 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
     @router.get("/api/wled")
     async def wled_config(request: Request, response: Response) -> WLEDConfig:
         runtime = request.app.state.runtime
-        response.headers["ETag"] = wled_revision(runtime)
-        return runtime.wled.config
+        async with runtime.lock:
+            response.headers["ETag"] = configuration_revision(runtime, request)
+            return runtime.wled.config
 
     @router.put("/api/wled")
     async def configure_wled(config: WLEDConfig, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            check_wled_revision(request, runtime)
-            await runtime.wled.configure(config)
-            response.headers["ETag"] = wled_revision(runtime)
+            check_revision(request, runtime)
+            await runtime.profiles.configure_wled(config)
+            response.headers["ETag"] = configuration_revision(runtime, request)
         return {"saved": True}
 
     @router.patch("/api/wled")
     async def update_wled(config: WLEDConfig, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            check_wled_revision(request, runtime)
+            check_revision(request, runtime)
             if config.model_fields_set:
                 updated = runtime.wled.config.model_copy(
                     update={key: getattr(config, key) for key in config.model_fields_set}
@@ -116,56 +131,67 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
                     updated = WLEDConfig.model_validate(updated.model_dump())
                 except ValidationError as exc:
                     raise HTTPException(422, exc.errors()[0]["msg"]) from exc
-                await runtime.wled.configure(updated)
-            response.headers["ETag"] = wled_revision(runtime)
+                await runtime.profiles.configure_wled(updated)
+            response.headers["ETag"] = configuration_revision(runtime, request)
         return {"saved": True}
 
     @router.post("/api/wled/devices", status_code=201)
     async def add_wled_device(device: Device, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            check_wled_revision(request, runtime)
+            check_revision(request, runtime)
             config = runtime.wled.config.model_dump(mode="json")
             config["devices"].append(device.model_dump(mode="json"))
             try:
                 updated = WLEDConfig.model_validate(config)
             except ValidationError as exc:
                 raise HTTPException(422, exc.errors()[0]["msg"]) from exc
-            await runtime.wled.configure(updated)
-            response.headers["ETag"] = wled_revision(runtime)
+            await runtime.profiles.configure_wled(updated)
+            response.headers["ETag"] = configuration_revision(runtime, request)
         return {"saved": True, "device": device.model_dump(mode="json")}
 
     @router.get("/api/wled/status")
     async def wled_status(request: Request, response: Response):
         runtime = request.app.state.runtime
-        response.headers["ETag"] = wled_revision(runtime)
-        return runtime.wled.status()
+        async with runtime.lock:
+            response.headers["ETag"] = configuration_revision(runtime, request)
+            return runtime.wled.status()
 
+    @router.get("/api/profiles")
+    async def profiles(request: Request, response: Response):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            response.headers["ETag"] = configuration_revision(runtime, request)
+            return runtime.profiles.summary()
+
+    @router.post("/api/profiles")
     @router.post("/api/wled/profiles")
     async def wled_create_profile(profile: ProfileName, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            check_wled_revision(request, runtime)
-            result = await runtime.wled.create_profile(profile.name, profile.source)
-            response.headers["ETag"] = wled_revision(runtime)
+            check_revision(request, runtime)
+            result = await runtime.profiles.create(profile.name, profile.source)
+            response.headers["ETag"] = configuration_revision(runtime, request)
             return result
 
+    @router.put("/api/profile")
     @router.put("/api/wled/profile")
     async def wled_select_profile(profile: ProfileSelection, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            check_wled_revision(request, runtime)
-            result = await runtime.wled.select_profile(profile.id)
-            response.headers["ETag"] = wled_revision(runtime)
+            check_revision(request, runtime)
+            result = await runtime.profiles.select(profile.id)
+            response.headers["ETag"] = configuration_revision(runtime, request)
             return result
 
+    @router.delete("/api/profiles/{profile_id}")
     @router.delete("/api/wled/profiles/{profile_id}")
     async def wled_delete_profile(profile_id: str, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            check_wled_revision(request, runtime)
-            result = await runtime.wled.delete_profile(profile_id)
-            response.headers["ETag"] = wled_revision(runtime)
+            check_revision(request, runtime)
+            result = await runtime.profiles.delete(profile_id)
+            response.headers["ETag"] = configuration_revision(runtime, request)
             return result
 
     @router.patch("/api/wled/devices/{device_id}")
@@ -174,14 +200,14 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
     ):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            check_wled_revision(request, runtime)
+            check_revision(request, runtime)
             config = runtime.wled.config.model_copy(deep=True)
             device = next((item for item in config.devices if item.id == device_id), None)
             if device is None:
                 raise HTTPException(404, "Unknown WLED device. Save it first.")
             device.enabled = update.enabled
-            await runtime.wled.configure(config)
-            response.headers["ETag"] = wled_revision(runtime)
+            await runtime.profiles.configure_wled(config)
+            response.headers["ETag"] = configuration_revision(runtime, request)
         return {"saved": True}
 
     @router.post("/api/wled/{device_id}/probe")
@@ -227,42 +253,54 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
             }
 
     @router.get("/api/caller")
-    async def caller_config(request: Request) -> CallerConfig:
-        return request.app.state.runtime.caller.config
-
-    @router.put("/api/caller")
-    async def configure_caller(config: CallerConfig, request: Request):
+    async def caller_config(request: Request, response: Response) -> CallerConfig:
         runtime = request.app.state.runtime
         async with runtime.lock:
-            await runtime.caller.configure(config)
+            response.headers["ETag"] = configuration_revision(runtime, request)
+            return runtime.caller.config
+
+    @router.put("/api/caller")
+    async def configure_caller(config: CallerConfig, request: Request, response: Response):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            check_revision(request, runtime)
+            await runtime.profiles.configure_caller(config)
+            response.headers["ETag"] = configuration_revision(runtime, request)
         return {"saved": True}
 
     @router.patch("/api/caller")
-    async def update_caller(config: CallerConfig, request: Request):
+    async def update_caller(config: CallerConfig, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
+            check_revision(request, runtime)
             if config.model_fields_set:
                 updated = runtime.caller.config.model_copy(
                     update={key: getattr(config, key) for key in config.model_fields_set}
                 )
-                await runtime.caller.configure(updated)
+                await runtime.profiles.configure_caller(updated)
+            response.headers["ETag"] = configuration_revision(runtime, request)
         return {"saved": True}
 
     @router.get("/api/caller/status")
-    async def caller_status(request: Request):
-        return request.app.state.runtime.caller.status()
+    async def caller_status(request: Request, response: Response):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            response.headers["ETag"] = configuration_revision(runtime, request)
+            return runtime.caller.status()
 
     @router.get("/api/caller/voices")
     async def caller_voices(request: Request):
         return request.app.state.runtime.caller.library.catalogue()
 
     @router.post("/api/caller/voices/{voice_id}/install", status_code=202)
-    async def caller_install(voice_id: str, request: Request):
+    async def caller_install(voice_id: str, request: Request, response: Response):
         runtime = request.app.state.runtime
         async with runtime.lock:
-            await runtime.caller.configure(
+            check_revision(request, runtime)
+            await runtime.profiles.configure_caller(
                 runtime.caller.config.model_copy(update={"voice": voice_id})
             )
+            response.headers["ETag"] = configuration_revision(runtime, request)
         if runtime.caller.library.installed(voice_id):
             return {"state": "installed", "voice_id": voice_id}
         return runtime.caller.status()["download"]

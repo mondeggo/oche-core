@@ -3,12 +3,14 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from ochecore import __version__
 from ochecore.api.http import create_router as create_http_router
 from ochecore.api.http import same_origin
+from ochecore.api.ui import UISettings
+from ochecore.api.ui import router as ui_router
 from ochecore.api.websocket import router as websocket_router
 from ochecore.autodarts.auth import safe_error
 from ochecore.autodarts.errors import ConnectionProblem
@@ -44,26 +46,47 @@ def create_app(settings: Settings | None = None, transport=None) -> FastAPI:
         docs_url="/docs" if settings.ui_enabled else None,
         redoc_url=None,
     )
+    application.state.ui = UISettings(settings)
     if settings.ui_enabled:
         application.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     application.include_router(create_http_router(STATIC if settings.ui_enabled else None))
     application.include_router(websocket_router)
+    application.include_router(ui_router)
 
     @application.middleware("http")
     async def browser_guard(request: Request, call_next):
-        if request.method not in {"GET", "HEAD", "OPTIONS"} and not same_origin(
-            request.headers.get("origin"), request.headers.get("host", ""), request.url.scheme
+        origin = request.headers.get("origin")
+        local_request = same_origin(origin, request.headers.get("host", ""), request.url.scheme)
+        parent_request = (
+            not local_request
+            and request.url.path == "/api/ui"
+            and application.state.ui.allows_parent(origin)
+        )
+        request.state.ui_parent_request = parent_request
+        if request.method not in {"GET", "HEAD", "OPTIONS"} and not (
+            local_request or (parent_request and request.method == "PATCH")
         ):
             return JSONResponse({"detail": "Origin not allowed."}, status_code=403)
         if request.method in {"POST", "PUT", "PATCH"} and not request.headers.get(
             "content-type", ""
         ).startswith("application/json"):
             return JSONResponse({"detail": "Use application/json."}, status_code=415)
-        response = await call_next(request)
+        if parent_request and request.method == "OPTIONS":
+            response = Response(status_code=204)
+            response.headers["Access-Control-Allow-Methods"] = "GET, PATCH"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        else:
+            response = await call_next(request)
+        if parent_request:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers.append("Vary", "Origin")
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
-        policy = "default-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
+        ancestors = application.state.ui.frame_ancestors()
+        policy = (
+            f"default-src 'self'; connect-src 'self'; frame-ancestors {ancestors}; base-uri 'none'"
+        )
         if request.url.path in {"/docs", "/redoc", "/docs/oauth2-redirect"}:
             policy += (
                 "; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net"

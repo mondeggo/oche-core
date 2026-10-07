@@ -81,6 +81,38 @@ def add_common_options(command: argparse.ArgumentParser) -> None:
                 add_common_options(child)
 
 
+def add_ui_options(command: argparse.ArgumentParser) -> None:
+    command.add_argument(
+        "--embedded",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Use the compact interface intended for embedding in Oche.",
+    )
+    command.add_argument("--theme", choices=["dark", "light"], help="Shared interface theme.")
+    command.add_argument(
+        "--parent-origin",
+        help="Exact Oche origin allowed to frame the UI; use an empty value to clear.",
+    )
+
+
+def add_profile_commands(command: argparse.ArgumentParser) -> None:
+    actions = command.add_subparsers(dest="profile_command")
+    actions.add_parser("list", help="List saved application profiles.")
+    create = actions.add_parser("create", help="Copy current integration settings or start blank.")
+    create.add_argument("name")
+    source = create.add_mutually_exclusive_group()
+    source.add_argument("--source", choices=["current", "blank"], default="current")
+    source.add_argument(
+        "--blank",
+        dest="source",
+        action="store_const",
+        const="blank",
+        help="Alias for --source blank.",
+    )
+    actions.add_parser("use", help="Activate an application profile.").add_argument("profile")
+    actions.add_parser("delete", help="Remove a saved application profile.").add_argument("profile")
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="Run and control the OcheCore headless service.")
     root.set_defaults(json=False)
@@ -94,6 +126,13 @@ def parser() -> argparse.ArgumentParser:
     commands = root.add_subparsers(dest="command")
     serve = commands.add_parser("serve", help="Start the service (also the default command).")
     serve.add_argument("--no-ui", action="store_true", help="Disable web pages and static assets.")
+    add_ui_options(serve)
+    ui = commands.add_parser("ui", help="Show or change embedding and shared appearance settings.")
+    add_ui_options(ui)
+    profiles = commands.add_parser(
+        "profiles", help="Manage application profiles for WLED and Caller."
+    )
+    add_profile_commands(profiles)
     commands.add_parser("status", help="Show connection status and the selected board.")
     commands.add_parser("doctor", help="Check service, connection and integration readiness.")
     commands.add_parser("boards", help="List boards linked to the connected AutoDarts account.")
@@ -144,17 +183,9 @@ def parser() -> argparse.ArgumentParser:
     list_targets = target_actions.add_parser("list")
     list_targets.add_argument("device", help="Saved device ID.")
     profiles = actions.add_parser(
-        "profiles", help="List, create, select or remove lighting profiles."
+        "profiles", help="Compatibility alias for application profiles; also changes Caller."
     )
-    profile_actions = profiles.add_subparsers(dest="profile_command")
-    profile_actions.add_parser("list")
-    create_profile = profile_actions.add_parser("create", help="Copy current rules or start blank.")
-    create_profile.add_argument("name")
-    create_profile.add_argument(
-        "--blank", action="store_true", help="Start with lights off and no event or player rules."
-    )
-    profile_actions.add_parser("use").add_argument("profile")
-    profile_actions.add_parser("delete").add_argument("profile")
+    add_profile_commands(profiles)
     settings = actions.add_parser("config", help="Show configuration or load a JSON file.")
     settings.add_argument("--file", type=Path)
     probe = actions.add_parser("probe", help="Check a saved controller or an unsaved address.")
@@ -258,8 +289,10 @@ def response_data(response):
     return data
 
 
-def request(client, method: str, path: str, body: dict | None = None):
+def request(client, method: str, path: str, body: dict | None = None, *, headers=None):
     options = {"json": body or {}} if method != "GET" else {}
+    if headers:
+        options["headers"] = headers
     return response_data(client.request(method, path, **options))
 
 
@@ -546,6 +579,22 @@ def execute(args, client) -> int:
             request(client, "PUT", "/api/config", {**values, **updates})
             config = request(client, "GET", "/api/config")
         print_json(config)
+    elif args.command == "ui":
+        updates = {
+            key: value
+            for key in ("embedded", "theme", "parent_origin")
+            if (value := getattr(args, key)) is not None
+        }
+        settings = request(client, "PATCH" if updates else "GET", "/api/ui", updates)
+        if args.json:
+            print_json(settings)
+        else:
+            print(f"Embedded: {state_label(settings['embedded'])}\nTheme: {settings['theme']}")
+            print(f"Parent origin: {settings['parent_origin'] or 'same origin only'}")
+            if settings.get("error"):
+                print(f"Attention: {settings['error']}")
+    elif args.command == "profiles":
+        execute_profiles(args, client)
     elif args.command == "login":
         return login(client, args)
     elif args.command == "logout":
@@ -576,6 +625,41 @@ def execute(args, client) -> int:
     elif args.command == "caller":
         execute_caller(args, client)
     return 0
+
+
+def execute_profiles(args, client) -> None:
+    response = client.request("GET", "/api/profiles")
+    config = response_data(response)
+    action = args.profile_command
+    if action in {None, "list"}:
+        print_summary(config, args, "profiles")
+        return
+    headers = {"If-Match": response.headers["etag"]} if "etag" in response.headers else None
+    if action == "create":
+        result = request(
+            client,
+            "POST",
+            "/api/profiles",
+            {"name": args.name, "source": args.source},
+            headers=headers,
+        )
+    else:
+        profile = next(
+            (
+                item
+                for item in config["profiles"]
+                if args.profile == item["id"] or args.profile.casefold() == item["name"].casefold()
+            ),
+            None,
+        )
+        if profile is None:
+            raise ControlError("Unknown application profile. Use 'profiles list' to list them.")
+        result = (
+            request(client, "PUT", "/api/profile", {"id": profile["id"]}, headers=headers)
+            if action == "use"
+            else request(client, "DELETE", f"/api/profiles/{profile['id']}", headers=headers)
+        )
+    print_json(result)
 
 
 def download_debug(client, args) -> None:
@@ -634,37 +718,7 @@ def execute_wled(args, client) -> None:
             raise ControlError("Unknown WLED device. Use 'wled devices' to list them.")
         print_summary(device["targets"], args, "targets")
     elif command == "profiles":
-        config = request(client, "GET", "/api/wled")
-        action = args.profile_command
-        if action in {None, "list"}:
-            print_summary(
-                {
-                    "active_profile": config["active_profile"],
-                    "profiles": [{"id": p["id"], "name": p["name"]} for p in config["profiles"]],
-                },
-                args,
-                "profiles",
-            )
-        elif action == "create":
-            print_json(
-                request(
-                    client,
-                    "POST",
-                    "/api/wled/profiles",
-                    {"name": args.name, "source": "blank" if args.blank else "current"},
-                )
-            )
-        else:
-            profile = next(
-                (p for p in config["profiles"] if args.profile in {p["id"], p["name"]}), None
-            )
-            if profile is None:
-                raise ControlError("Unknown lighting profile. Use 'wled profiles' to list them.")
-            print_json(
-                request(client, "PUT", "/api/wled/profile", {"id": profile["id"]})
-                if action == "use"
-                else request(client, "DELETE", f"/api/wled/profiles/{profile['id']}")
-            )
+        execute_profiles(args, client)
     elif command in {"on", "off"}:
         path = f"/api/wled/{args.device}/power" if args.device else "/api/wled/power"
         result = request(client, "POST", path, {"on": command == "on"})
@@ -801,6 +855,9 @@ def run(argv=None) -> int:
             settings = Settings()
             if getattr(args, "no_ui", False):
                 settings.ui_enabled = False
+            for key in ("embedded", "theme", "parent_origin"):
+                if (value := getattr(args, key, None)) is not None:
+                    setattr(settings, f"ui_{key}", value)
             logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
             logging.getLogger("httpx").setLevel(logging.WARNING)
             uvicorn.run(create_app(settings), host=settings.host, port=settings.port)

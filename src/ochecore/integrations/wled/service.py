@@ -501,21 +501,37 @@ async def inspect_device(
                 segment["matrix"] = matrix
                 # WLED 0.15 serializes len as X width, even for a 2D segment.
                 segment["length"] = matrix["width"] * matrix["height"]
-        effects = data.get("effects", ["Solid"])
-        if not isinstance(effects, list) or not all(isinstance(item, str) for item in effects):
-            raise ValueError
         result = {
             "name": str(info.get("name", "WLED")),
             "version": info["ver"],
             "on": state.get("on"),
             "brightness": state.get("bri"),
             "segments": segments,
-            "effects": effects,
         }
         if canvas:
             result["matrix"] = {"width": canvas["w"], "height": canvas["h"]}
     except (KeyError, TypeError, ValueError) as exc:
         raise ConnectionProblem("The device did not return valid WLED capabilities.") from exc
+    count = info.get("fxcount")
+
+    def complete_effects(value: object) -> bool:
+        return (
+            isinstance(value, list)
+            and bool(value)
+            and all(isinstance(name, str) and name.strip() for name in value)
+            and (type(count) is not int or count <= 0 or len(value) >= count)
+        )
+
+    effects = data.get("effects")
+    if not complete_effects(effects):
+        try:
+            effects = await request(http, device, "/json/eff", array=True)
+        except ConnectionProblem as exc:
+            raise ConnectionProblem(f"Cannot load WLED effects from /json/eff. {exc}") from exc
+        if not complete_effects(effects):
+            raise ConnectionProblem("WLED returned an incomplete or invalid effect list.")
+    # Keep reserved entries so each array index remains the controller's native effect ID.
+    result["effects"] = effects
     if metadata:
         try:
             definitions = await request(http, device, "/json/fxdata", array=True)
@@ -930,10 +946,11 @@ class WLED:
         await asyncio.gather(*self.tasks, return_exceptions=True)
         self.tasks.clear()
 
-    async def configure(self, config: WLEDConfig) -> None:
+    async def configure(self, config: WLEDConfig, *, persist: bool = True) -> None:
         config = config.model_copy(deep=True)
         self.sync_profiles(config)
-        write_private_json(self.path, config.model_dump(mode="json"))
+        if persist:
+            write_private_json(self.path, config.model_dump(mode="json"))
         active_devices = {
             d.url.lower(): d
             for d in config.devices
@@ -1007,14 +1024,14 @@ class WLED:
                 target.matrix.appearance = style.matrix.model_copy(deep=True)
         config.active_profile = profile.id
 
-    async def create_profile(
+    def create_profile_config(
         self, name: str, source: Literal["current", "blank"] = "current"
-    ) -> dict:
+    ) -> WLEDConfig:
         config = self.config.model_copy(deep=True)
         if any(p.name.casefold() == name.casefold() for p in config.profiles):
-            raise ConnectionProblem("A lighting profile with that name already exists.")
+            raise ConnectionProblem("A profile with that name already exists.")
         if len(config.profiles) >= 12:
-            raise ConnectionProblem("Keep at most 12 lighting profiles.")
+            raise ConnectionProblem("Keep at most 12 profiles.")
         active = next(p for p in config.profiles if p.id == config.active_profile)
         profile = active.model_copy(update={"id": uuid4().hex[:12], "name": name}, deep=True)
         if source == "blank":
@@ -1034,29 +1051,26 @@ class WLED:
             }
         config.profiles.append(profile)
         self.apply_profile(config, profile)
-        await self.configure(config)
-        return {"active_profile": profile.id}
+        return config
 
-    async def select_profile(self, profile_id: str) -> dict:
+    def select_profile_config(self, profile_id: str) -> WLEDConfig:
         config = self.config.model_copy(deep=True)
         profile = next((p for p in config.profiles if p.id == profile_id), None)
         if profile is None:
-            raise ConnectionProblem("Unknown lighting profile.")
+            raise ConnectionProblem("Unknown profile.")
         self.apply_profile(config, profile)
-        await self.configure(config)
-        return {"active_profile": profile.id}
+        return config
 
-    async def delete_profile(self, profile_id: str) -> dict:
+    def delete_profile_config(self, profile_id: str) -> WLEDConfig:
         config = self.config.model_copy(deep=True)
         if not any(p.id == profile_id for p in config.profiles):
-            raise ConnectionProblem("Unknown lighting profile.")
+            raise ConnectionProblem("Unknown profile.")
         if len(config.profiles) == 1:
-            raise ConnectionProblem("Keep at least one lighting profile.")
+            raise ConnectionProblem("Keep at least one profile.")
         config.profiles = [p for p in config.profiles if p.id != profile_id]
         if config.active_profile == profile_id:
             self.apply_profile(config, config.profiles[0])
-        await self.configure(config)
-        return {"active_profile": config.active_profile}
+        return config
 
     async def discover(self) -> dict:
         if self.discovery_lock.locked():

@@ -279,9 +279,10 @@ class Caller:
                 asyncio.create_task(self._play(), name="caller-audio"),
             ]
 
-    async def configure(self, config: CallerConfig) -> None:
+    async def configure(self, config: CallerConfig, *, persist: bool = True) -> None:
         self.library.check_selection(config.voice)
-        write_private_json(self.path, config.model_dump())
+        if persist:
+            write_private_json(self.path, config.model_dump())
         await self._close_tasks()
         changed_voice = config.voice != self.config.voice
         self.config, self.error = config, None

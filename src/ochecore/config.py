@@ -1,5 +1,8 @@
 import json
+import re
+from ipaddress import IPv6Address
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -10,6 +13,49 @@ from pydantic_settings import (
     SettingsConfigDict,
     YamlConfigSettingsSource,
 )
+
+
+def parent_origin(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        parts = urlsplit(value)
+        port = parts.port
+        host = parts.hostname
+        if (
+            parts.scheme not in {"http", "https"}
+            or not host
+            or parts.username
+            or parts.password
+            or parts.query
+            or parts.fragment
+            or parts.path not in {"", "/"}
+            or any(character.isspace() or character in "*;,'\"<>" for character in value)
+            or (port is not None and not 1 <= port <= 65535)
+        ):
+            raise ValueError
+        host = host.encode("idna").decode("ascii").lower()
+        if ":" in host:
+            IPv6Address(host)
+            host = f"[{host}]"
+        elif not re.fullmatch(r"[a-z0-9._-]+", host):
+            raise ValueError
+        suffix = f":{port}" if port and port != {"http": 80, "https": 443}[parts.scheme] else ""
+        return f"{parts.scheme}://{host}{suffix}"
+    except (ValueError, UnicodeError) as exc:
+        raise ValueError("Use an exact HTTP(S) parent origin without a path or wildcard") from exc
+
+
+class UIConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    embedded: bool = False
+    theme: Literal["dark", "light"] = "dark"
+    parent_origin: str = ""
+
+    @field_validator("parent_origin")
+    @classmethod
+    def valid_parent(cls, value: str) -> str:
+        return parent_origin(value)
 
 
 class ConnectionConfig(BaseModel):
@@ -58,8 +104,16 @@ class Settings(BaseSettings):
     client_id: str = ""
     board_id: str = ""
     ui_enabled: bool = True
+    ui_embedded: bool | None = None
+    ui_theme: Literal["dark", "light"] | None = None
+    ui_parent_origin: str | None = None
     request_timeout: float = Field(default=10, gt=0)
     reconcile_interval: float = Field(default=30, gt=0)
+
+    @field_validator("ui_parent_origin")
+    @classmethod
+    def valid_ui_parent(cls, value: str | None) -> str | None:
+        return parent_origin(value) if value is not None else None
 
     @field_validator("api_base_url")
     @classmethod

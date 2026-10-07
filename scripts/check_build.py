@@ -35,9 +35,12 @@ for ui_enabled in (True, False):
         with TestClient(app) as client:
             assert client.get("/healthz").json() == {"status": "ok", "version": __version__}
             assert client.get("/api/status").status_code == 200
+            assert client.get("/api/profiles").json()["active_profile"] == "default"
+            assert client.get("/api/ui").status_code == 200
             for path in (
                 "/",
                 "/static/app.js",
+                "/static/theme.js",
                 "/static/client.mjs",
                 "/static/select.js",
                 "/static/wled.js",
