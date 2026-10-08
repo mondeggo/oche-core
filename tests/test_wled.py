@@ -577,6 +577,113 @@ async def test_lights_off_survives_game_events_and_configuration_updates(tmp_pat
             await service.close()
 
 
+@pytest.mark.parametrize("master_on", [True, False])
+async def test_output_power_isolated_during_events_reconfigure_and_shutdown(tmp_path, master_on):
+    state = capabilities()
+    state["state"]["on"] = master_on
+    state["info"]["leds"] = {
+        "ins": [
+            {"start": 0, "len": 16, "pin": [16], "type": 22},
+            {"start": 16, "len": 128, "pin": [2], "type": 22},
+        ]
+    }
+    sent = []
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=state)
+        body = json.loads(request.content)
+        sent.append(body)
+        if "on" in body:
+            state["state"]["on"] = body["on"]
+        for update in body.get("seg", []):
+            next(s for s in state["state"]["seg"] if s["id"] == update["id"]).update(update)
+        return httpx.Response(200, json={"success": True})
+
+    bus = EventBus()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        service = WLED(
+            tmp_path / "wled.json", http, bus, lambda: {"phase": "ready", "available": True}
+        )
+        await service.configure(
+            WLEDConfig(
+                enabled=True,
+                devices=[
+                    device(
+                        targets=[
+                            {"id": "ring", "name": "Ring", "segment": 0},
+                            {"id": "strip", "name": "Strip", "segment": 1},
+                        ]
+                    )
+                ],
+            )
+        )
+        try:
+            if master_on:
+                assert (await service.output_power("board", 1, False))["applied"]
+            else:
+                assert (await service.output_power("board", 0, True))["applied"]
+                assert sent[-1]["on"] is True
+            assert service.workers["board"].off_segments == {1}
+            start = len(sent)
+            bus.publish("core", "match_win", {"player": {"is_local": True}}, kind="normalized")
+            await until(lambda: len(sent) > start)
+            assert state["state"]["seg"][0]["on"] is True
+            assert state["state"]["seg"][1]["on"] is False
+            with pytest.raises(ConnectionProblem, match="Turn this output on"):
+                await service.test("board", Preview(target_id="strip"))
+            await service.configure(service.config)
+            await asyncio.sleep(0.35)
+            assert service.status()["devices"][0]["off_segments"] == [1]
+            assert all(
+                s.get("on") is False
+                for body in sent[start:]
+                for s in body.get("seg", [])
+                if s["id"] == 1
+            )
+            assert (await service.output_power("board", 1, True))["applied"]
+            assert state["state"]["seg"][1]["on"] is True
+            await service.output_power("board", 0, False)
+        finally:
+            await service.close()
+        assert state["state"]["seg"][0]["on"] is False
+
+
+def test_output_power_api_rejects_shared_segments_and_failed_commands(settings):
+    state = capabilities()
+    state["info"]["leds"] = {
+        "ins": [
+            {"start": 0, "len": 8, "pin": [16], "type": 22},
+            {"start": 8, "len": 136, "pin": [2], "type": 22},
+        ]
+    }
+    posts = []
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=state)
+        posts.append(request)
+        return httpx.Response(200, json={"success": False})
+
+    with TestClient(create_app(settings, transport=httpx.MockTransport(handler))) as client:
+        client.put("/api/wled", json=WLEDConfig(devices=[device()]).model_dump(mode="json"))
+        path = "/api/wled/board/outputs/0/power"
+        result = client.post(path, json={"on": False})
+        assert result.status_code == 409
+        assert "separate" in result.text
+        assert not posts
+        state["info"]["leds"]["ins"][0]["len"] = 16
+        state["info"]["leds"]["ins"][1].update(start=16, len=128)
+        assert client.post(path, json={"on": False}).status_code == 409
+        assert client.get("/api/wled/status").json()["devices"][0]["off_segments"] == []
+        assert (
+            client.post(
+                path, json={"on": False}, headers={"Origin": "https://other.test"}
+            ).status_code
+            == 403
+        )
+
+
 async def test_removing_a_target_clears_its_ready_color(tmp_path):
     sent = []
 

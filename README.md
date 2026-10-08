@@ -388,6 +388,13 @@ Add lighting zones in the UI, or supply targets through the JSON configuration.
 The UI calls these zones; CLI/API configuration retains the `targets` field.
 
 `wled enable` / `disable` controls event automation; `wled on` / `off` controls power.
+
+In the UI, select a GPIO output to turn it on or off independently. Each output needs
+its own WLED segments; segments spanning multiple outputs cannot be switched independently.
+An output turned off stays off during events, previews and profile changes until turned on
+or the service restarts. Turning on one output while master power is off leaves the others off.
+The device power buttons control master power and retain individual output overrides.
+Use **Open WLED** to open the controller address in a new browser tab.
 Without a device ID these commands affect the whole integration or all devices. To edit settings,
 save the output of `ochecore wled config` to a JSON file and reload it with `--file`. Settings
 are validated and saved atomically in `data/profiles.json`; no restart is required. Per-target
@@ -498,6 +505,7 @@ on load and omitted on the next configuration save. See the
 | `POST /api/wled/probe` | Check an unsaved address; body `{"url":"http://wled.local"}` |
 | `POST /api/wled/preview` | Temporary unsaved test: `device`, `target_id`, optional `phase`, `event`, `player`, `value`, `duration`; responds after restoration |
 | `POST /api/wled/{device_id}/power` | Set master power with `{"on":false}` or `{"on":true}`; keeps saved rules |
+| `POST /api/wled/{device_id}/outputs/{output_id}/power` | Set one reported GPIO output's power with `{"on":false}` or `{"on":true}`; requires separate segments |
 | `POST /api/wled/power` | Set master power on all saved devices; same body, per-device results |
 | `POST /api/wled/{device_id}/test` | Timed preview: `target_id`, optional `phase`, `event`, `player`, `value`, `duration` |
 | `GET /api/config`, `PUT /api/config` | Public connection settings |

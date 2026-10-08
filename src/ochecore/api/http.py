@@ -226,6 +226,12 @@ def create_router(static_dir: Path | None = None) -> APIRouter:
         async with runtime.lock:
             return await runtime.wled.preview_draft(draft)
 
+    @router.post("/api/wled/{device_id}/outputs/{output_id}/power")
+    async def wled_output_power(device_id: str, output_id: int, power: Power, request: Request):
+        runtime = request.app.state.runtime
+        async with runtime.lock:
+            return await runtime.wled.output_power(device_id, output_id, power.on)
+
     @router.post("/api/wled/power")
     @router.post("/api/wled/{device_id}/power")
     async def wled_power(power: Power, request: Request, device_id: str | None = None):

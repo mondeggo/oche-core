@@ -458,6 +458,7 @@ async def inspect_device(
                 "length": s.get("len", s["stop"] - s["start"]),
                 "start": s["start"],
                 "stop": s["stop"],
+                "on": s.get("on", True),
             }
             for s in state["seg"]
             if s["stop"] > s["start"]
@@ -804,6 +805,7 @@ class DeviceWorker:
         self.error: str | None = None
         self.connected = False
         self.power_off = False
+        self.off_segments: set[int] = set()
         self.reset_on_close = True
         self.last_sent: str | None = None
         self.sent = 0
@@ -866,9 +868,17 @@ class DeviceWorker:
         if not view["available"]:
             self.overlays.clear()
         overlays = {key: item[2] for key, item in self.overlays.items()}
-        return payload(self.device, view, overlays, info=self.info)
+        return self.apply_power(payload(self.device, view, overlays, info=self.info))
+
+    def apply_power(self, body: dict) -> dict:
+        return {
+            **body,
+            "seg": [s for s in body["seg"] if s["id"] not in self.off_segments]
+            + [{"id": segment, "on": False} for segment in sorted(self.off_segments)],
+        }
 
     async def send(self, body: dict) -> None:
+        body = self.apply_power(body)
         if body["seg"]:
             await request(self.http, self.device, "/json/state", body)
             self.sent += 1
@@ -969,6 +979,7 @@ class WLED:
             if config.enabled and d.enabled and any(t.enabled for t in d.targets)
         }
         powered_off = {w.device.url.lower() for w in self.workers.values() if w.power_off}
+        off_segments = {w.device.url.lower(): set(w.off_segments) for w in self.workers.values()}
         for worker in self.workers.values():
             updated = active_devices.get(worker.device.url.lower())
             old_targets = {
@@ -987,6 +998,7 @@ class WLED:
         self.start()
         for worker in self.workers.values():
             worker.power_off = worker.device.url.lower() in powered_off
+            worker.off_segments = off_segments.get(worker.device.url.lower(), set())
 
     @staticmethod
     def sync_profiles(config: WLEDConfig) -> None:
@@ -1136,6 +1148,49 @@ class WLED:
                     results.append({"id": worker.device.id, "applied": False, "error": str(exc)})
         return {"applied": all(item["applied"] for item in results), "devices": results}
 
+    async def output_power(self, device_id: str, output_id: int, on: bool) -> dict:
+        worker = self.worker(device_id)
+        async with worker.lock:
+            info = await worker.probe(refresh=True)
+            output = next((item for item in info["outputs"] if item["id"] == output_id), None)
+            if output is None:
+                raise ConnectionProblem("Unknown WLED output. Check the connection again.")
+            touching = [
+                s
+                for s in info["segments"]
+                if max(s["start"], output["start"]) < min(s["stop"], output["stop"])
+            ]
+            if not touching or any(
+                s.get("matrix") or s["start"] < output["start"] or s["stop"] > output["stop"]
+                for s in touching
+            ):
+                raise ConnectionProblem(
+                    "This output needs separate, non-overlapping segments in WLED. "
+                    "Update its segments and check the connection again."
+                )
+            selected = {s["id"] for s in touching}
+            off_segments = worker.off_segments - selected if on else worker.off_segments | selected
+            body = {"seg": [{"id": key, "on": on} for key in sorted(selected)], "tt": 0}
+            if on and (worker.power_off or info.get("on") is False):
+                # Waking one output must not wake the other outputs with the master switch.
+                others = {s["id"] for s in info["segments"]} - selected
+                off_segments |= others
+                body["seg"] += [{"id": key, "on": False} for key in sorted(others)]
+                body["on"] = True
+                body["bri"] = info.get("brightness") or 128
+            await request(self.http, worker.device, "/json/state", body)
+            worker.off_segments = off_segments
+            if on:
+                worker.power_off = False
+                info["on"] = True
+            for segment in info["segments"]:
+                if segment["id"] in selected or segment["id"] in off_segments:
+                    segment["on"] = segment["id"] not in off_segments
+            worker.overlays.clear()
+            worker.last_payload = None
+            worker.connected, worker.error = True, None
+            return {"applied": True, "output_id": output_id, "on": on}
+
     async def preview_draft(self, draft: DraftPreview) -> dict:
         """Preview one unsaved target, then restore settings without persisting the draft."""
         target = next((t for t in draft.device.targets if t.id == draft.target_id), None)
@@ -1149,6 +1204,8 @@ class WLED:
             (w for w in self.workers.values() if w.device.url.lower() == device.url.lower()), None
         )
         async with worker.lock if worker else asyncio.Lock():
+            if worker and target.segment in worker.off_segments:
+                raise ConnectionProblem("Turn this output on before previewing its lighting.")
             snapshot = await request(self.http, device, "/json")
             info = await inspect_device(self.http, device, data=snapshot, metadata=True)
             validate_capabilities(device, info)
@@ -1240,6 +1297,7 @@ class WLED:
                     "error": worker.error,
                     "last_sent": worker.last_sent,
                     "commands_sent": worker.sent,
+                    "off_segments": sorted(worker.off_segments),
                     "info": worker.info,
                 }
                 for key, worker in self.workers.items()

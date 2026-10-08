@@ -172,6 +172,18 @@ import {
         origin(item.url) === origin($("wled-url").value.trim()),
     );
     $("wled-power-on").disabled = $("wled-power-off").disabled = !saved;
+    const address = $("wled-url").value.trim();
+    const link = $("wled-open");
+    try {
+      const url = new URL(address);
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
+        throw new Error("Invalid WLED address");
+      link.href = url.origin;
+      link.hidden = false;
+    } catch {
+      link.removeAttribute("href");
+      link.hidden = true;
+    }
     form.querySelectorAll("[data-rule]").forEach(updateAppearance);
     $("wled-add-device").disabled = working || !configuration;
     $("wled-discover").disabled = !configuration;
@@ -184,6 +196,7 @@ import {
       button.textContent = added ? "Added" : "Add";
     });
     $("wled-name").disabled = $("wled-url").disabled = !device();
+    renderOutputs();
   }
 
   function markChanged() {
@@ -746,6 +759,28 @@ import {
       ].includes(segment?.color_mode);
     }
     const segments = outputSegments(selectedOutput, info);
+    const saved = latestStatus?.devices.find(
+      (item) => item.id === selected && origin(item.url) === origin(current.url),
+    );
+    const separate = !!selectedOutput && !selectedOutput.matrix && segments.length > 0 &&
+      !(info?.segments || []).some((segment) =>
+        segment.start < selectedOutput.stop && segment.stop > selectedOutput.start &&
+        (segment.matrix || segment.start < selectedOutput.start || segment.stop > selectedOutput.stop),
+      );
+    $("wled-output-power").hidden = !selectedOutput || !!selectedOutput.matrix;
+    const off = saved?.on === false || segments.every(
+      (segment) => saved?.off_segments?.includes(segment.id) ||
+        (saved?.info?.segments?.find((item) => item.id === segment.id) || segment).on === false,
+    );
+    $("wled-output-power-label").textContent = selectedOutput
+      ? `${outputLabel(selectedOutput)} · ${separate ? off ? "Off" : "On" : "Separate segments required in WLED"}`
+      : "";
+    for (const on of [true, false]) {
+      const button = $(`wled-output-${on ? "on" : "off"}`);
+      button.textContent = selectedOutput ? `${outputLabel(selectedOutput)} ${on ? "on" : "off"}` : "";
+      button.disabled = working || changed || !saved || !separate;
+      button.setAttribute("aria-pressed", String(separate && (on ? !off : off)));
+    }
     $("wled-add-target").disabled =
       working ||
       current.targets.length >= 16 ||
@@ -1266,6 +1301,13 @@ import {
     });
   });
   for (const on of [true, false]) {
+    $(`wled-output-${on ? "on" : "off"}`).addEventListener("click", () =>
+      work(async () => {
+        const output = selectedOutputs.get(selected);
+        await api(`/api/wled/${selected}/outputs/${output}/power`, "POST", { on });
+        notice(on ? "Output on." : "Output off. Game events will keep it off.");
+      }),
+    );
     $(`wled-power-${on ? "on" : "off"}`).addEventListener("click", () =>
       work(async () => {
         const result = await api(`/api/wled/${selected}/power`, "POST", { on });

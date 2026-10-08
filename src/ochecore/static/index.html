@@ -419,10 +419,11 @@
                 role="group"
                 aria-label="Controller power"
               >
-                <button id="wled-power-on" type="button">Lights on</button>
-                <button id="wled-power-off" type="button">Lights off</button>
+                <button id="wled-power-on" type="button">Device on</button>
+                <button id="wled-power-off" type="button">Device off</button>
               </div>
               <button id="wled-probe" type="button">Check connection</button>
+              <a id="wled-open" target="_blank" rel="noopener noreferrer" hidden>Open WLED ↗</a>
             </div>
 
             <div id="wled-outputs-section" hidden>
@@ -436,6 +437,13 @@
                 role="group"
                 aria-label="LED outputs"
               ></div>
+              <div id="wled-output-power" class="wled-controller-bar" hidden>
+                <span id="wled-output-power-label" class="hint" role="status"></span>
+                <div class="wled-power" role="group" aria-label="Selected output power">
+                  <button id="wled-output-on" type="button">Output on</button>
+                  <button id="wled-output-off" type="button">Output off</button>
+                </div>
+              </div>
             </div>
             <div class="panel-heading wled-target-heading">
               <div>
