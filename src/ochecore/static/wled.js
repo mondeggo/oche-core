@@ -108,9 +108,9 @@ import {
     count: 1,
     phases: {
       ready: appearance("#00ff00"),
-      takeout: { ...appearance("#ff8000"), brightness: 191 },
+      takeout: { ...appearance("#e17100"), brightness: 191 },
       waiting: appearance("#ff0000"),
-      idle: { ...appearance("#4080ff"), brightness: 64, effect: 2 },
+      idle: { ...appearance("#6f00dd"), brightness: 64, effect: 2 },
     },
     effects: {
       throw: { ...appearance("#ffffff"), effect: 12, duration: 0.6 },

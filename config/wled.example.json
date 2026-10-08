@@ -12,7 +12,8 @@
           "segment": 0,
           "phases": {
             "ready": {"color": "#00ff00", "brightness": 128},
-            "takeout": {"color": "#ff8000", "brightness": 191},
+            "idle": {"color": "#6f00dd", "brightness": 64, "effect": 2},
+            "takeout": {"color": "#e17100", "brightness": 191},
             "waiting": {"color": "#ff0000", "brightness": 128}
           }
         },
