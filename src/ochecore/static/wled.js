@@ -113,10 +113,17 @@ import {
       idle: appearance("#202020"),
     },
     effects: {
-      score_180: { ...appearance("#ffb000"), duration: 2 },
+      throw: { ...appearance("#ffffff"), effect: 12, duration: 0.6 },
+      single: { ...appearance("#00aaff"), effect: 3, duration: 0.6 },
+      double: { ...appearance("#ff8000"), effect: 1, duration: 0.8 },
+      triple: { ...appearance("#a000ff"), effect: 33, duration: 1 },
+      outer_bull: { ...appearance("#00ffaa"), effect: 6, duration: 1 },
+      bull: { ...appearance("#ff0080"), effect: 9, duration: 1.5 },
+      miss: { ...appearance("#808080"), effect: 12, duration: 0.5 },
+      score_180: { ...appearance("#ffb000"), effect: 33, duration: 2 },
       bust: { ...appearance("#ff0000"), duration: 2 },
       leg_win: { ...appearance("#00aaff"), duration: 2 },
-      match_win: { ...appearance("#a000ff"), duration: 4 },
+      match_win: { ...appearance("#a000ff"), effect: 9, duration: 10 },
     },
     players: {},
     matrix: {
@@ -1271,6 +1278,7 @@ import {
         target.matrix.width = segment.matrix.width;
         target.matrix.height = segment.matrix.height;
         target.matrix.serpentine = false;
+        for (const effect of Object.values(target.effects)) effect.effect = 0;
       }
       if (["white", "on_off"].includes(segment.color_mode)) {
         for (const style of Object.values(target.phases))

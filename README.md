@@ -332,6 +332,13 @@ The **Events** tab groups rules into:
 - **Game flow & transitions:** match start/end, turn start, takeout start/end, manual reset,
   and calibration start/end.
 
+New whole-segment zones celebrate match wins with WLED's Rainbow effect for 10 seconds.
+Pixel and score-display zones use a solid win colour for the same duration.
+New whole-segment zones also animate hits: singles use Wipe (0.6s), doubles Blink (0.8s),
+triples Rainbow Runner (1s), outer bulls Sweep (1s), and bullseyes Rainbow (1.5s).
+Other throws use Fade (0.6s), misses Fade (0.5s), and a 180 uses Rainbow Runner (2s).
+Pixel and score-display zones retain solid colours. Existing saved rules are preserved.
+
 The **Players** tab has up to ten ready-to-throw appearances. Empty name filters match the
 player's one-based match position; a name filter matches a case-insensitive substring instead.
 The first enabled matching slot wins. Player colours apply only to local players while ready.

@@ -77,9 +77,7 @@ class PlayerAppearance(Appearance):
 class PhaseColours(Model):
     idle: Appearance = Field(default_factory=lambda: Appearance(color="#202020"))
     ready: Appearance = Field(default_factory=lambda: Appearance(color="#00ff00"))
-    takeout: Appearance = Field(
-        default_factory=lambda: Appearance(color="#ff8000", brightness=191)
-    )
+    takeout: Appearance = Field(default_factory=lambda: Appearance(color="#ff8000", brightness=191))
     waiting: Appearance = Field(default_factory=lambda: Appearance(color="#ff0000"))
 
 
@@ -101,10 +99,17 @@ class Matrix(Model):
 
 def default_effects() -> dict[EffectName, Effect]:
     return {
-        "score_180": Effect(color="#ffb000"),
+        "throw": Effect(color="#ffffff", effect=12, duration=0.6),
+        "single": Effect(color="#00aaff", effect=3, duration=0.6),
+        "double": Effect(color="#ff8000", effect=1, duration=0.8),
+        "triple": Effect(color="#a000ff", effect=33, duration=1),
+        "outer_bull": Effect(color="#00ffaa", effect=6, duration=1),
+        "bull": Effect(color="#ff0080", effect=9, duration=1.5),
+        "miss": Effect(color="#808080", effect=12, duration=0.5),
+        "score_180": Effect(color="#ffb000", effect=33),
         "bust": Effect(color="#ff0000"),
         "leg_win": Effect(color="#00aaff"),
-        "match_win": Effect(color="#a000ff", duration=4),
+        "match_win": Effect(color="#a000ff", effect=9, duration=10),
     }
 
 
@@ -128,6 +133,9 @@ class Target(Model):
 
     @model_validator(mode="after")
     def valid_effects(self):
+        if self.mode != "segment" and "effects" not in self.model_fields_set:
+            for effect in self.effects.values():
+                effect.effect = 0
         appearances = [*self.effects.values(), *self.players.values(), self.matrix.appearance]
         appearances += [getattr(self.phases, key) for key in Phase.__args__]
         if self.mode != "segment" and any(item.effect for item in appearances):

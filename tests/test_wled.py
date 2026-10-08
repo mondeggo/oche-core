@@ -85,6 +85,7 @@ async def test_probe_loads_full_effect_catalogue_when_combined_response_is_incom
     assert all(request.method == "GET" for request in requested)
     board = device()
     board.targets[0].phases.ready.effect = 4
+    board.targets[0].effects.clear()
     validate_capabilities(board, info)
     for reserved in (2, 3):
         board.targets[0].phases.ready.effect = reserved
@@ -107,6 +108,7 @@ async def test_worker_keeps_native_effects_valid_when_every_snapshot_omits_names
 
     board = device()
     board.targets[0].phases.ready.effect = 2
+    board.targets[0].effects.clear()
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         worker = DeviceWorker(board, http, EventBus(), lambda: {})
         for refresh in (True, False):
@@ -914,7 +916,19 @@ def capabilities():
                 {"id": 1, "start": 16, "stop": 144, "len": 128},
             ],
         },
-        "effects": ["Solid", "Blink", "RSVD"],
+        "effects": [
+            "Solid",
+            "Blink",
+            "RSVD",
+            "Wipe",
+            "Wipe Random",
+            "Random Colors",
+            "Sweep",
+            "Dynamic",
+            "Colorloop",
+            "Rainbow",
+        ]
+        + ["Test effect"] * 24,
     }
 
 
@@ -968,6 +982,40 @@ async def test_event_matrix_hit_rules_and_fallback_are_isolated(number, multipli
         hit.snapshot = True
         worker.accept(hit)
         assert not worker.overlays
+
+
+@pytest.mark.parametrize(
+    "number,multiplier,name,effect,duration",
+    [
+        (20, 1, "single", 3, 0.6),
+        (20, 2, "double", 1, 0.8),
+        (20, 3, "triple", 33, 1),
+        (25, 1, "outer_bull", 6, 1),
+        (25, 2, "bull", 9, 1.5),
+        (0, 0, "miss", 12, 0.5),
+        (20, None, "throw", 12, 0.6),
+    ],
+)
+async def test_default_hit_animations_yield_to_match_celebration(
+    number, multiplier, name, effect, duration
+):
+    board = device()
+    async with httpx.AsyncClient() as http:
+        worker = DeviceWorker(board, http, EventBus(), lambda: {})
+        hit = event("throw", dart={"segment": {"number": number, "multiplier": multiplier}})
+        worker.accept(hit)
+        view = {"phase": "ready", "available": True}
+        assert worker.desired(view)["seg"][0]["fx"] == effect
+        assert board.targets[0].effects[name].duration == duration
+        worker.accept(event("match_win"))
+        worker.accept(hit)
+        assert worker.desired(view)["seg"][0]["fx"] == 9
+        assert worker.overlays["ring"][3] == "match_win"
+    for mode in ("pixels", "matrix"):
+        target = wled.Target(id="pixels", name="Pixels", mode=mode)
+        assert all(item.effect == 0 for item in target.effects.values())
+        assert target.effects["match_win"].duration == 10
+        assert wled.Target.model_validate(target.model_dump()) == target
 
 
 def test_player_colors_follow_ready_local_player_and_restore_after_takeout():
@@ -1104,7 +1152,7 @@ def native_matrix_state():
                 {"id": 2, "start": 256, "stop": 272, "startY": 0, "stopY": 1, "len": 16},
             ]
         },
-        "effects": ["Solid"],
+        "effects": capabilities()["effects"],
     }
 
 
@@ -1392,7 +1440,9 @@ async def test_priority_expiry_and_corrections(monkeypatch):
         worker.accept(event("match_win"))
         worker.accept(event("turn_end", score=180, busted=False))
         assert worker.desired(view)["seg"][0]["col"] == [[160, 0, 255]]
-        future = time.monotonic() + 5
+        assert worker.desired(view)["seg"][0]["fx"] == 9
+        assert worker.device.targets[0].effects["match_win"].duration == 10
+        future = time.monotonic() + 11
         monkeypatch.setattr("ochecore.integrations.wled.service.time.monotonic", lambda: future)
         assert worker.desired({**view, "phase": "takeout"})["seg"][0]["col"] == [[255, 128, 0]]
         worker.accept(event("bust", player={"is_local": False}))
