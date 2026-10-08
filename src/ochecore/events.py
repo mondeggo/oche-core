@@ -386,6 +386,7 @@ class EventNormalizer:
         self.seen: OrderedDict[tuple, None] = OrderedDict()
         self.takeout_phase: str | None = None
         self.takeout_context: dict | None = None
+        self.takeout_turn: tuple | None = None
         self.synchronized = False
         self.invalid_states = 0
         self.emitted = 0
@@ -393,6 +394,9 @@ class EventNormalizer:
         self.calibrating = False
         self.board_event: str | None = None
         self.board_throws: int | None = None
+        self.board_reset_turn: tuple | None = None
+        self.board_reset_count = 0
+        self.manual_reset_seen = False
         self.state_valid = False
         self.takeout_is_local = False
         self.editing = False
@@ -405,11 +409,15 @@ class EventNormalizer:
         self.seen.clear()
         self.takeout_phase = None
         self.takeout_context = None
+        self.takeout_turn = None
         self.synchronized = False
         self.readiness = None
         self.calibrating = False
         self.board_event = None
         self.board_throws = None
+        self.board_reset_turn = None
+        self.board_reset_count = 0
+        self.manual_reset_seen = False
         self.state_valid = False
         self.takeout_is_local = False
         self.editing = False
@@ -423,14 +431,20 @@ class EventNormalizer:
         self.calibrating = False
         self.board_event = None
         self.board_throws = None
+        self.board_reset_turn = None
+        self.board_reset_count = 0
+        self.manual_reset_seen = False
         self.takeout_phase = None
         self.takeout_context = None
+        self.takeout_turn = None
 
     def board_status(self, data: dict) -> None:
         """Recognize explicit reference statuses; absence of readiness never means ready."""
         status = data.get("status")
         action = data.get("event")
         self.board_event = action.lower() if isinstance(action, str) else None
+        if self.board_event != "manual reset":
+            self.manual_reset_seen = False
         count = data.get("numThrows")
         self.board_throws = count if type(count) is int and 0 <= count <= 3 else None
         if not isinstance(status, str):
@@ -502,6 +516,13 @@ class EventNormalizer:
             result.update(phase="takeout", reason="Remove darts")
         elif frame.game_winner >= 0 or frame.winner >= 0:
             result["reason"] = "Leg or match finished"
+        elif (
+            self.takeout_phase == "takeout_finished"
+            and self.takeout_is_local
+            and turn
+            and self.takeout_turn == self._key(frame, turn)
+        ):
+            result["reason"] = "Waiting for next turn"
         elif not result["player"]["is_local"]:
             result["reason"] = "Waiting for another board or a bot"
         elif self.readiness == "ready":
@@ -612,6 +633,8 @@ class EventNormalizer:
         if not isinstance(action, str) or raw.snapshot:
             return
         action = action.lower().replace("_", " ").replace("-", " ")
+        if raw.event.startswith("board.") and action != "manual reset":
+            self.manual_reset_seen = False
         # Board state and event envelopes are paired. Emit once from the event stream.
         if raw.event == "board.events" and action in {
             "manual reset",
@@ -642,6 +665,11 @@ class EventNormalizer:
             self.takeout_is_local = raw.event.startswith("board.") or bool(
                 (phase_context.get("player") or {}).get("is_local")
             )
+            self.takeout_turn = (
+                tuple(phase_context.get(key) for key in ("match_id", "set", "leg", "turn_id"))
+                if phase_context.get("turn_id")
+                else None
+            )
             if self.takeout_is_local and raw.event != "board.state":
                 self.readiness = "takeout" if phase == "takeout_started" else "waiting"
             if phase == "takeout_started":
@@ -657,8 +685,18 @@ class EventNormalizer:
             )
             if raw.event != "board.state" and not state_matches:
                 self.readiness = "waiting"
+            if action == "manual reset":
+                if not self.manual_reset_seen:
+                    turn = self.frame.turns[0] if self.frame and self.frame.turns else None
+                    owner = self._context(self.frame, turn).get("player") if turn else None
+                    self.board_reset_turn = (
+                        self._key(self.frame, turn) if owner and owner["is_local"] else None
+                    )
+                    self.board_reset_count = len(turn.throws) if self.board_reset_turn else 0
+                self.manual_reset_seen = True
             self.takeout_phase = None
             self.takeout_context = None
+            self.takeout_turn = None
 
     def _match_state(self, raw: Event) -> None:
         if raw.data.get("id", self.match_id) != self.match_id:
@@ -695,6 +733,12 @@ class EventNormalizer:
         silent = raw.snapshot or not self.synchronized
         previous = self.frame
         current = frame.turns[0] if frame.turns else None
+        if current is None or self.board_reset_turn != self._key(frame, current):
+            self.board_reset_turn = None
+            self.board_reset_count = 0
+            self.manual_reset_seen = False
+        else:
+            self.board_reset_count = min(self.board_reset_count, len(current.throws))
         if silent:
             for turn in reversed(frame.turns):
                 key = self._key(frame, turn)
@@ -782,10 +826,12 @@ class EventNormalizer:
             elif self._remember(("throw", *key, dart.id)):
                 self.takeout_phase = None
                 self.takeout_context = None
+                self.takeout_turn = None
                 self.takeout_is_local = False
-                if (context.get("player") or {}).get("is_local") and self.board_throws != len(
-                    turn.throws
-                ):
+                # A manual board reset restarts detection's counter without deleting scored darts.
+                offset = self.board_reset_count if self.board_reset_turn == key else 0
+                detected = None if self.board_throws is None else self.board_throws + offset
+                if (context.get("player") or {}).get("is_local") and detected != len(turn.throws):
                     self.readiness = "waiting"
                 self._emit("throw", raw, data)
             else:

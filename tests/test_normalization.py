@@ -97,8 +97,218 @@ def test_captured_visits_and_paired_board_readiness(variant, state_first):
     feed("board.events", {"event": "Takeout started"})
     feed("board.state", {"status": "Throw", "event": "Takeout finished", "numThrows": 0})
     feed("board.events", {"event": "Takeout finished"})
-    assert normalizer.current_state(True)["phase"] == "ready"
+    assert normalizer.current_state(True)["phase"] == "waiting"
+    assert normalizer.current_state(True)["reason"] == "Waiting for next turn"
     assert names(bus.normalized_history).count("takeout_finished") == 1
+    next_visit = deepcopy(frames[0])
+    next_visit["turns"][0]["id"] = "next-local-visit"
+    feed("match.state", next_visit)
+    assert normalizer.current_state(True)["phase"] == "ready"
+
+
+@pytest.mark.parametrize("reset_state_first", [True, False])
+@pytest.mark.parametrize("throw_state_first", [True, False])
+@pytest.mark.parametrize("score_first", [True, False])
+def test_manual_board_reset_keeps_scored_darts_without_losing_readiness(
+    frame, replay, reset_state_first, throw_state_first, score_first
+):
+    replay({"status": "Throw", "event": "Throw detected", "numThrows": 1}, "board.state")
+    add_dart(frame, dart("before-reset", 4, 1))
+    replay(frame)
+    reset = [
+        ({"status": "Throw", "event": "Manual reset", "numThrows": 0}, "board.state"),
+        ({"event": "Manual reset"}, "board.events"),
+    ]
+    for data, event in reset if reset_state_first else reversed(reset):
+        replay(data, event)
+    add_dart(frame, dart("after-reset", 20, 1))
+    if score_first:
+        replay(frame)
+        assert replay.normalizer.current_state(True)["phase"] == "waiting"
+    detection = [
+        ({"status": "Throw", "event": "Throw detected", "numThrows": 1}, "board.state"),
+        ({"event": "Throw detected", "throwNumber": 1}, "board.events"),
+    ]
+    for data, event in detection if throw_state_first else reversed(detection):
+        replay(data, event)
+    if not score_first:
+        replay(frame)
+    state = replay.normalizer.current_state(True)
+    assert state["phase"] == "ready"
+    assert state["turn_score"] == 24
+    assert names(replay.bus.normalized_history).count("throw") == 2
+    # The visit still ends after three scoring darts, despite detection counting only two.
+    replay({"status": "Throw", "event": "Throw detected", "numThrows": 2}, "board.state")
+    add_dart(frame, dart("third", 20, 1))
+    replay(frame)
+    assert replay.normalizer.current_state(True)["phase"] == "takeout"
+
+
+@pytest.mark.parametrize("status", ["Error", "Calibrating"])
+def test_reset_counter_offset_does_not_invent_board_readiness(frame, replay, status):
+    add_dart(frame, dart("first", 4, 1))
+    replay(frame)
+    replay({"status": "Throw", "event": "Manual reset", "numThrows": 0}, "board.state")
+    replay({"status": status, "numThrows": 1}, "board.state")
+    add_dart(frame, dart("second", 20, 1))
+    replay(frame)
+    assert replay.normalizer.current_state(True)["phase"] == "waiting"
+
+
+@pytest.mark.parametrize("via_rest", [False, True])
+def test_repeated_reset_status_does_not_rebase_against_a_new_cloud_score(frame, replay, via_rest):
+    add_dart(frame)
+    replay(frame)
+    reset = {"status": "Throw", "event": "Manual reset", "numThrows": 0}
+    replay(reset, "board.state")
+    replay({"event": "Manual reset"}, "board.events")
+    add_dart(frame)
+    replay(frame)  # The cloud advances before the next detection status arrives.
+    if via_rest:
+        replay.normalizer.board_status(reset)
+    else:
+        replay(reset, "board.state")
+    replay({"status": "Throw", "event": "Throw detected", "numThrows": 2}, "board.state")
+    add_dart(frame)
+    replay(frame)
+    # The detector has counted two darts since the reset, matching three scored darts.
+    assert replay.normalizer.readiness == "ready"
+    assert replay.normalizer.current_state(True)["phase"] == "takeout"
+
+
+@pytest.mark.parametrize("snapshot", [False, True])
+def test_clearing_scored_darts_after_reset_clamps_the_counter_baseline(frame, replay, snapshot):
+    add_dart(frame)
+    replay(frame)
+    replay({"status": "Throw", "event": "Manual reset", "numThrows": 0}, "board.state")
+    frame["turns"][0].update(throws=[], points=0)
+    replay(frame, snapshot=snapshot)
+    replay({"status": "Throw", "event": "Throw detected", "numThrows": 1}, "board.state")
+    add_dart(frame, dart("new-after-correction"))
+    replay(frame)
+    assert replay.normalizer.current_state(True)["phase"] == "ready"
+
+
+def test_reset_offset_is_not_reused_after_a_bot_visit(frame, replay):
+    empty = deepcopy(frame)
+    add_dart(frame)
+    replay(frame)
+    replay({"status": "Throw", "event": "Manual reset", "numThrows": 0}, "board.state")
+    bot = deepcopy(empty)
+    bot["player"] = 1
+    bot["players"][1]["cpuPPR"] = 45
+    bot["turns"][0].update(id="bot-visit", playerId=bot["players"][1]["id"])
+    replay(bot)
+    add_dart(bot)
+    replay(bot)
+    replay({"status": "Throw", "event": "Manual reset", "numThrows": 0}, "board.state")
+    local = deepcopy(empty)
+    local["turns"][0]["id"] = "next-local-visit"
+    replay(local)
+    replay({"status": "Throw", "event": "Throw detected", "numThrows": 1}, "board.state")
+    add_dart(local)
+    replay(local)
+    assert replay.normalizer.current_state(True)["phase"] == "ready"
+
+
+def test_a_reset_in_a_new_visit_is_not_mistaken_for_the_previous_reset(frame, replay):
+    add_dart(frame, dart("previous-visit-dart"))
+    replay(frame)
+    reset = {"status": "Throw", "event": "Manual reset", "numThrows": 0}
+    replay(reset, "board.state")
+    # Manual scoring advances the cloud without further detector updates.
+    frame["turns"][0].update(id="next-local-visit", throws=[], points=0)
+    add_dart(frame, dart("manually-scored"))
+    replay(frame)
+    replay(reset, "board.state")
+    replay({"status": "Throw", "event": "Throw detected", "numThrows": 1}, "board.state")
+    add_dart(frame, dart("detected-after-reset"))
+    replay(frame)
+    assert replay.normalizer.current_state(True)["phase"] == "ready"
+
+
+def test_intervening_board_activity_allows_a_new_reset_in_the_same_visit(frame, replay):
+    reset = {"status": "Throw", "event": "Manual reset", "numThrows": 0}
+    replay(reset, "board.state")
+    add_dart(frame, dart("manually-scored"))
+    replay(frame)
+    replay({"event": "Started"}, "board.events")
+    replay({"event": "Manual reset"}, "board.events")
+    replay(reset, "board.state")
+    replay({"status": "Throw", "event": "Throw detected", "numThrows": 1}, "board.state")
+    add_dart(frame, dart("detected-after-reset"))
+    replay(frame)
+    assert replay.normalizer.current_state(True)["phase"] == "ready"
+
+
+@pytest.mark.parametrize("operation", ["resync", "select"])
+def test_reset_offset_is_cleared_when_reconnecting_or_selecting_a_match(frame, replay, operation):
+    empty = deepcopy(frame)
+    add_dart(frame)
+    replay(frame)
+    replay({"status": "Throw", "event": "Manual reset", "numThrows": 0}, "board.state")
+    if operation == "resync":
+        replay.normalizer.resync()
+    else:
+        empty["id"] = "new-match"
+        replay.normalizer.select(empty["id"])
+    replay(empty, snapshot=True)
+    replay({"status": "Throw", "event": "Throw detected", "numThrows": 1}, "board.state")
+    add_dart(empty)
+    replay(empty)
+    assert replay.normalizer.current_state(True)["phase"] == "ready"
+
+
+@pytest.mark.parametrize("dart_count", [1, 3])
+@pytest.mark.parametrize("state_first", [True, False])
+@pytest.mark.parametrize("next_turn_first", [True, False])
+def test_takeout_completion_waits_for_the_next_visit(
+    frame, replay, dart_count, state_first, next_turn_first
+):
+    for _ in range(dart_count):
+        add_dart(frame)
+    replay(frame)
+    replay({"event": "Takeout started"}, "board.events")
+    next_visit = deepcopy(frame)
+    next_visit["turns"].insert(
+        0,
+        {
+            "id": "next-local-visit",
+            "playerId": frame["players"][0]["id"],
+            "throws": [],
+            "points": 0,
+        },
+    )
+    if next_turn_first:
+        replay(next_visit)
+    finish = [
+        ({"status": "Throw", "event": "Takeout finished", "numThrows": 0}, "board.state"),
+        ({"event": "Takeout finished"}, "board.events"),
+    ]
+    for data, event in finish if state_first else reversed(finish):
+        replay(data, event)
+    if not next_turn_first:
+        assert replay.normalizer.current_state(True)["phase"] == "waiting"
+        assert replay.normalizer.current_state(True)["reason"] == "Waiting for next turn"
+        replay(next_visit)
+    assert replay.normalizer.current_state(True)["phase"] == "ready"
+
+
+def test_takeout_completion_cannot_flash_ready_before_a_bot_turn(frame, replay):
+    for _ in range(3):
+        add_dart(frame)
+    replay(frame)
+    replay({"event": "Takeout started"}, "board.events")
+    replay({"status": "Throw", "event": "Takeout finished", "numThrows": 0}, "board.state")
+    assert replay.normalizer.current_state(True)["phase"] == "waiting"
+    frame["player"] = 1
+    frame["players"][1]["cpuPPR"] = 45
+    frame["turns"].insert(
+        0, {"id": "bot-visit", "playerId": frame["players"][1]["id"], "throws": [], "points": 0}
+    )
+    replay(frame)
+    assert replay.normalizer.current_state(True)["phase"] == "waiting"
+    assert replay.normalizer.current_state(True)["player"]["is_bot"] is True
 
 
 def test_three_darts_repeat_and_finished_timestamp(frame, replay):

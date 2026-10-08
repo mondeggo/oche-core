@@ -77,7 +77,9 @@ until a valid match state arrives; with no active match it is `idle`.
 For local players, `ready` requires explicit board status `Throw`, `Ready` or `Ready for throw`.
 Unknown/calibrating statuses and new detection signals use `waiting`. Score editing also uses
 `waiting`, with reason `Editing score`. Completed local visits
-and local takeout signals use `takeout`; takeout completion waits for fresh readiness.
+and local takeout signals use `takeout`. After takeout completion, the previous visit remains
+`waiting` until the next turn arrives, even if the board already reports `Throw`.
+The next local turn still requires explicit board readiness.
 Remote players and bots cannot enable local ready lighting. `Throw` and paired detection/takeout
 messages were verified against the October 2 X01 and Cricket capture.
 
@@ -189,11 +191,15 @@ Rejection of a board or match topic marks the connection `degraded` and makes `/
 Board status `Throw` explicitly indicates readiness. A visit end time of
 `0001-01-01T00:00:00Z` means unfinished. Calibration takes priority over a remembered takeout
 and shows `waiting`, including outside a match. Paired board state/event frames preserve
-readiness; scored darts do not invalidate a matching board throw count.
+readiness; scored darts do not invalidate a matching board throw count. A manual board reset
+restarts the detection counter without removing scored darts. Readiness comparisons account
+for those existing darts within the same visit; the offset is cleared on visit changes or resync.
 
 ## Coverage and limits
 
 Synthetic replay tests cover corrections, undo, busts, wins, leg changes, player attribution
 and reconnection. Anonymized X01 and Cricket captures add real scoring and correction cases.
+Regressions from the October 8 X01 recording cover resets during a visit and takeout/bot turn
+ordering, including both orders of paired board events and states.
 Caller replay tests cover all 14 supported game modes. Full live-match acceptance across
 modes and long-running recovery remain pending.
