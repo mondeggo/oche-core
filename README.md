@@ -461,6 +461,10 @@ Non-empty connection fields from these sources override saved settings and lock 
 through the API, CLI and UI. Leave them empty to configure through either client; settings are
 saved in `data/connection.json`. Tokens are stored separately.
 
+When no OAuth client ID is configured, OcheCore falls back to `darts-caller`, including
+when the configuration file is absent or the saved ID is empty. This fallback does not
+lock the field; an explicitly configured client ID takes precedence.
+
 UI settings are saved in `data/ui.json`. Optional `ui_embedded`, `ui_theme` and `ui_parent_origin`
 startup values override those saved values when the service starts. Omit them to keep changes
 made through `ochecore ui` or `PATCH /api/ui` across restarts.

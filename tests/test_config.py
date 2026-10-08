@@ -8,6 +8,25 @@ from ochecore.config import Settings
 from ochecore.main import create_app
 
 
+@pytest.mark.parametrize("saved_id", [None, "", "   ", "saved-client"])
+def test_client_fallback_without_yaml(tmp_path, monkeypatch, saved_id):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OCHECORE_CLIENT_ID", raising=False)
+    if saved_id is not None:
+        (tmp_path / "connection.json").write_text(
+            json.dumps({"client_id": saved_id}), encoding="utf-8"
+        )
+    settings = Settings(_env_file=None, data_dir=tmp_path)
+    expected = "saved-client" if saved_id == "saved-client" else "darts-caller"
+    assert settings.connection().client_id == expected
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/api/config").json()["locked_fields"] == []
+        assert client.put("/api/config", json={"client_id": "custom"}).status_code == 200
+        assert client.get("/api/config").json()["client_id"] == "custom"
+        assert client.put("/api/config", json={"client_id": ""}).status_code == 200
+        assert client.get("/api/config").json()["client_id"] == "darts-caller"
+
+
 def test_yaml_defaults_and_environment_overrides(tmp_path, monkeypatch):
     config_file = tmp_path / "config.yaml"
     config_file.write_text('client_id: "yaml-client"\nport: 8091\n', encoding="utf-8")

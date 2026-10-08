@@ -61,8 +61,13 @@ class UIConfig(BaseModel):
 class ConnectionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    client_id: str = Field(default="", max_length=200)
+    client_id: str = Field(default="darts-caller", max_length=200)
     board_id: str = ""
+
+    @field_validator("client_id")
+    @classmethod
+    def default_client_id(cls, value: str) -> str:
+        return value or "darts-caller"
 
     @field_validator("board_id")
     @classmethod

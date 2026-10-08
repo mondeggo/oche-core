@@ -23,8 +23,8 @@ def test_unconfigured_startup_and_configuration_persistence(settings):
         assert client.get("/").headers["cache-control"] == "no-cache"
         assert client.get("/healthz").json()["status"] == "ok"
         assert client.get("/readyz").status_code == 503
-        assert client.get("/api/status").json()["auth"]["state"] == "unconfigured"
-        assert client.post("/api/auth/login", json={}).status_code == 409
+        assert client.get("/api/status").json()["auth"]["state"] == "disconnected"
+        assert client.get("/api/config").json()["client_id"] == "darts-caller"
         config = {"client_id": "my-app", "board_id": BOARD_ID}
         assert client.put("/api/config", json=config).status_code == 200
         assert client.get("/api/status").json()["cloud"]["state"] == "waiting_for_login"
