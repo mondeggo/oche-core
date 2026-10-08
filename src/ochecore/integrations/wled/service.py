@@ -807,7 +807,7 @@ class DeviceWorker:
         self.reset_on_close = True
         self.last_sent: str | None = None
         self.sent = 0
-        self.overlays: dict[str, tuple[float, int, Effect]] = {}
+        self.overlays: dict[str, tuple[float, int, Effect, str]] = {}
         self.last_payload: dict | None = None
 
     async def probe(self, *, refresh: bool = False) -> dict:
@@ -826,17 +826,29 @@ class DeviceWorker:
     def accept(self, event: Event) -> None:
         if event.kind != "normalized" or event.snapshot:
             return
+        fresh = (datetime.now(UTC) - event.received_at).total_seconds() <= 2
+        local = bool((event.data.get("player") or {}).get("is_local"))
         if event.event in {
             "throw_corrected",
             "throw_removed",
             "match_started",
-            "turn_started",
             "manual_reset",
             "calibration_started",
         }:
             self.overlays.clear()
+        elif event.event == "turn_started" and fresh:
+            # A bot's turn can arrive milliseconds after the local takeout finishes.
+            self.overlays = {
+                key: item
+                for key, item in self.overlays.items()
+                if not local and item[3] == "takeout_finished"
+            }
+        elif event.event == "throw" and local and fresh:
+            self.overlays = {
+                key: item for key, item in self.overlays.items() if item[3] != "takeout_finished"
+            }
         name = effect_name(event)
-        if name is None or (datetime.now(UTC) - event.received_at).total_seconds() > 2:
+        if name is None or not fresh:
             return
         now = time.monotonic()
         for target in self.device.targets:
@@ -846,7 +858,7 @@ class DeviceWorker:
                 effect, priority = target.effects.get("throw"), PRIORITY["throw"]
             old = self.overlays.get(target.id)
             if target.enabled and effect and (not old or old[0] <= now or priority >= old[1]):
-                self.overlays[target.id] = (now + effect.duration, priority, effect)
+                self.overlays[target.id] = (now + effect.duration, priority, effect, name)
 
     def desired(self, view: dict) -> dict:
         now = time.monotonic()

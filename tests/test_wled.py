@@ -1192,6 +1192,89 @@ async def test_capabilities_bounds_reserved_effects_and_malformed_device():
             await inspect_device(http, device())
 
 
+@pytest.mark.parametrize("delay", [0.0033, 0.0115, 0.0393])
+@pytest.mark.parametrize("is_bot", [False, True])
+async def test_takeout_finished_effect_survives_remote_turn_until_original_expiry(
+    monkeypatch, delay, is_bot
+):
+    clock = [100.0]
+    monkeypatch.setattr(wled.time, "monotonic", lambda: clock[0])
+    board = device(
+        targets=[
+            {
+                "id": "ring",
+                "name": "Ring",
+                "effects": {"takeout_finished": {"color": "#123456", "duration": 2}},
+            }
+        ]
+    )
+    async with httpx.AsyncClient() as http:
+        worker = DeviceWorker(board, http, EventBus(), lambda: {})
+        worker.accept(event("takeout_finished"))
+        clock[0] += delay
+        player = {"is_local": False, "is_bot": is_bot}
+        worker.accept(event("turn_started", player=player))
+        waiting = {"phase": "waiting", "available": True}
+        assert worker.desired(waiting)["seg"][0]["col"] == [[18, 52, 86]]
+
+        clock[0] = 101.9
+        worker.accept(
+            event("throw", player=player, dart={"segment": {"number": 20, "multiplier": 1}})
+        )
+        stale = event("turn_started")
+        stale.received_at -= timedelta(seconds=3)
+        worker.accept(stale)
+        assert worker.desired(waiting)["seg"][0]["col"] == [[18, 52, 86]]
+
+        clock[0] = 102.0
+        assert worker.desired(waiting)["seg"][0]["col"] == [[255, 0, 0]]
+        stale = event("takeout_finished")
+        stale.received_at -= timedelta(seconds=3)
+        worker.accept(stale)
+        assert not worker.overlays
+
+
+@pytest.mark.parametrize("next_event", ["turn_started", "throw"])
+async def test_local_play_interrupts_takeout_finished_without_a_hit_rule(next_event):
+    board = device(
+        targets=[
+            {
+                "id": "ring",
+                "name": "Ring",
+                "effects": {"takeout_finished": {"color": "#123456"}},
+            }
+        ]
+    )
+    async with httpx.AsyncClient() as http:
+        worker = DeviceWorker(board, http, EventBus(), lambda: {})
+        worker.accept(event("takeout_finished"))
+        worker.accept(event(next_event, dart={"segment": {"number": 20, "multiplier": 1}}))
+        assert not worker.overlays
+        assert worker.desired({"phase": "ready", "available": True})["seg"][0]["col"] == [
+            [0, 255, 0]
+        ]
+
+
+async def test_takeout_transition_policy_keeps_win_priority_and_clears_on_disconnect():
+    board = device()
+    board.targets[0].effects["takeout_finished"] = wled.Effect(color="#123456")
+    async with httpx.AsyncClient() as http:
+        worker = DeviceWorker(board, http, EventBus(), lambda: {})
+        worker.accept(event("match_win"))
+        worker.accept(event("takeout_finished"))
+        worker.accept(event("throw", dart={"segment": {"number": 20, "multiplier": 1}}))
+        assert worker.desired({"phase": "takeout", "available": True})["seg"][0]["col"] == [
+            [160, 0, 255]
+        ]
+        worker.accept(event("turn_started", player={"is_local": False, "is_bot": True}))
+        assert not worker.overlays
+        worker.accept(event("takeout_finished"))
+        assert worker.desired({"phase": "waiting", "available": False})["seg"][0]["col"] == [
+            [255, 0, 0]
+        ]
+        assert not worker.overlays
+
+
 async def test_priority_expiry_and_corrections(monkeypatch):
     async with httpx.AsyncClient() as http:
         worker = DeviceWorker(device(), http, EventBus(), lambda: {})

@@ -345,7 +345,9 @@ The current phase is highlighted. Phase/player colours
 last while that state is active; event effects last for their configured duration (0.1–30 seconds).
 Match win has highest priority, followed by leg win, bust, 180, bullseye and other effects.
 A specific hit rule takes precedence over **Any dart** within each target. Corrections and new
-turns clear temporary effects. Player actions affect local players only; board and match lifecycle
+turns clear temporary effects, except that a remote or bot turn lets **Takeout finished** run
+until its original expiry. A new local turn or throw interrupts that effect. Player actions
+affect local players only; board and match lifecycle
 events do not require a player. Snapshots never celebrate. Every target keeps independent rules,
 so a white illumination segment can remain steady while an RGB ring reacts to hits.
 
