@@ -85,6 +85,7 @@ async def test_probe_loads_full_effect_catalogue_when_combined_response_is_incom
     assert all(request.method == "GET" for request in requested)
     board = device()
     board.targets[0].phases.ready.effect = 4
+    board.targets[0].phases.idle.effect = 0
     board.targets[0].effects.clear()
     validate_capabilities(board, info)
     for reserved in (2, 3):
@@ -919,7 +920,7 @@ def capabilities():
         "effects": [
             "Solid",
             "Blink",
-            "RSVD",
+            "Breathe",
             "Wipe",
             "Wipe Random",
             "Random Colors",
@@ -1338,7 +1339,8 @@ async def test_capabilities_bounds_reserved_effects_and_malformed_device():
         with pytest.raises(ConnectionProblem, match="does not exist"):
             validate_capabilities(device(targets=[{"id": "x", "name": "x", "segment": 5}]), info)
         invalid = device()
-        invalid.targets[0].phases.ready.effect = 2
+        info["effects"][32] = "RSVD"
+        invalid.targets[0].phases.ready.effect = 32
         with pytest.raises(ConnectionProblem, match="unavailable"):
             validate_capabilities(invalid, info)
     async with httpx.AsyncClient(
@@ -1729,7 +1731,9 @@ async def test_disable_after_preview_clears_lights_and_workers(tmp_path):
             await until(lambda: bool(sent))
             await service.test("board", Preview(target_id="ring", duration=0.5))
             assert any(body["seg"][0].get("col") == [[0, 255, 0]] for body in sent)
-            assert sent[-1]["seg"][0]["col"] == [[32, 32, 32]]
+            assert sent[-1]["seg"][0]["col"] == [[64, 128, 255]]
+            assert sent[-1]["seg"][0]["fx"] == 2
+            assert sent[-1]["seg"][0]["bri"] == 64
             await service.configure(WLEDConfig(enabled=False, devices=[device()]))
             assert sent[-1]["seg"][0]["col"] == [[255, 0, 0]]
             assert not service.tasks and not bus.normalized_queues

@@ -110,7 +110,7 @@ import {
       ready: appearance("#00ff00"),
       takeout: { ...appearance("#ff8000"), brightness: 191 },
       waiting: appearance("#ff0000"),
-      idle: appearance("#202020"),
+      idle: { ...appearance("#4080ff"), brightness: 64, effect: 2 },
     },
     effects: {
       throw: { ...appearance("#ffffff"), effect: 12, duration: 0.6 },
@@ -1279,6 +1279,7 @@ import {
         target.matrix.height = segment.matrix.height;
         target.matrix.serpentine = false;
         for (const effect of Object.values(target.effects)) effect.effect = 0;
+        target.phases.idle.effect = 0;
       }
       if (["white", "on_off"].includes(segment.color_mode)) {
         for (const style of Object.values(target.phases))

@@ -75,7 +75,9 @@ class PlayerAppearance(Appearance):
 
 
 class PhaseColours(Model):
-    idle: Appearance = Field(default_factory=lambda: Appearance(color="#202020"))
+    idle: Appearance = Field(
+        default_factory=lambda: Appearance(color="#4080ff", brightness=64, effect=2)
+    )
     ready: Appearance = Field(default_factory=lambda: Appearance(color="#00ff00"))
     takeout: Appearance = Field(default_factory=lambda: Appearance(color="#ff8000", brightness=191))
     waiting: Appearance = Field(default_factory=lambda: Appearance(color="#ff0000"))
@@ -133,6 +135,8 @@ class Target(Model):
 
     @model_validator(mode="after")
     def valid_effects(self):
+        if self.mode != "segment" and "idle" not in self.phases.model_fields_set:
+            self.phases.idle.effect = 0
         if self.mode != "segment" and "effects" not in self.model_fields_set:
             for effect in self.effects.values():
                 effect.effect = 0

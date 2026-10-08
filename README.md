@@ -323,8 +323,9 @@ waiting appearance; use **Lights off** when you want them dark.
 - **Matrix score**: choose remaining score, visit total or last dart. Set dimensions, rotation
   and row wiring. Corrections and silent reconnection snapshots update the displayed score.
 
-Defaults are green for confirmed ready, orange at 75% brightness for takeout, red for waiting and dim white
-when idle. The **Phases** tab shows these stages with brightness sliders and inline previews.
+Defaults are green for confirmed ready, orange at 75% brightness for takeout, red for waiting,
+and soft blue at 25% brightness with Breathe when idle. Pixel zones use steady blue instead.
+The **Phases** tab shows these stages with brightness sliders and inline previews.
 The **Events** tab groups rules into:
 
 - **Match & victories:** leg and match wins.
