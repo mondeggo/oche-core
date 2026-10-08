@@ -1073,20 +1073,18 @@ class WLED:
         active = next(p for p in config.profiles if p.id == config.active_profile)
         profile = active.model_copy(update={"id": uuid4().hex[:12], "name": name}, deep=True)
         if source == "blank":
-            profile.targets = {
-                device.id: {
-                    target.id: TargetStyle(
-                        phases=PhaseColours(
-                            **{phase: Appearance(brightness=0) for phase in Phase.__args__}
-                        ),
-                        effects={},
-                        players={},
-                        matrix=Appearance(brightness=0),
+            profile.targets = {}
+            for device in config.devices:
+                styles = {}
+                for target in device.targets:
+                    defaults = Target(id=target.id, name=target.name, mode=target.mode)
+                    styles[target.id] = TargetStyle(
+                        phases=defaults.phases,
+                        effects=defaults.effects,
+                        players=defaults.players,
+                        matrix=defaults.matrix.appearance,
                     )
-                    for target in device.targets
-                }
-                for device in config.devices
-            }
+                profile.targets[device.id] = styles
         config.profiles.append(profile)
         self.apply_profile(config, profile)
         return config

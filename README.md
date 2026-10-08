@@ -252,8 +252,8 @@ and asks for confirmation. Creation selects the new profile;
 at least one profile must remain.
 
 Each profile remembers phase colours, event effects, player colours, matrix appearance and all
-Caller settings, including enabled state, voice, output and volume. A blank profile has zero lighting
-brightness, no event/player effects and Caller disabled with no voice selected. Device addresses,
+Caller settings, including enabled state, voice, output and volume. A profile created from scratch uses the default phase colours and event effects, including
+purple idle and orange takeout. Player rules start empty and Caller is disabled with no voice selected. Device addresses,
 zones, geometry, WLED automation switches and the AutoDarts account stay shared. Adding or removing
 a zone updates all profiles. Switching to another voice may download it again; wait for an active
 voice installation to finish before switching.

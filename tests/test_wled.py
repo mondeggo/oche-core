@@ -761,7 +761,7 @@ def test_profiles_keep_independent_colors_shared_hardware_and_persist(settings, 
 
 
 @pytest.mark.parametrize("via_cli", [False, True])
-def test_blank_profiles_keep_hardware_and_start_without_rules(settings, capsys, via_cli):
+def test_blank_profiles_keep_hardware_and_start_with_defaults(settings, capsys, via_cli):
     settings.ui_enabled = False
     configured = device(
         enabled=False,
@@ -810,14 +810,22 @@ def test_blank_profiles_keep_hardware_and_start_without_rules(settings, capsys, 
         for actual, before in zip(
             blank["devices"][0]["targets"], original[0]["targets"], strict=True
         ):
-            assert actual["effects"] == actual["players"] == {}
-            assert all(
-                style == {"color": "#ffffff", "brightness": 0, "effect": 0}
-                for style in actual["phases"].values()
-            )
+            expected = wled.Target(id=actual["id"], name=actual["name"], mode=actual["mode"])
+            assert actual["effects"] == expected.model_dump(mode="json")["effects"]
+            assert actual["players"] == {}
+            assert actual["phases"]["idle"] == {
+                "color": "#6f00dd",
+                "brightness": 64,
+                "effect": 2 if actual["mode"] == "segment" else 0,
+            }
+            assert actual["phases"]["takeout"] == {
+                "color": "#e17100",
+                "brightness": 191,
+                "effect": 0,
+            }
             assert actual["matrix"]["appearance"] == {
                 "color": "#ffffff",
-                "brightness": 0,
+                "brightness": 128,
                 "effect": 0,
             }
             for key in ("id", "name", "enabled", "segment", "mode", "start", "count"):
@@ -840,9 +848,10 @@ def test_blank_profiles_keep_hardware_and_start_without_rules(settings, capsys, 
         assert restored["active_profile"] == profile_id
         ring, matrix = restored["devices"][0]["targets"]
         assert ring["phases"]["ready"]["brightness"] == 42
-        assert ring["effects"] == ring["players"] == {}
-        assert ring["phases"]["waiting"]["brightness"] == 0
-        assert matrix["matrix"]["appearance"]["brightness"] == 0
+        assert ring["effects"]["match_win"]["duration"] == 10
+        assert ring["players"] == {}
+        assert ring["phases"]["waiting"]["brightness"] == 128
+        assert matrix["matrix"]["appearance"]["brightness"] == 128
 
 
 def test_blank_profile_can_be_created_before_any_devices(settings):

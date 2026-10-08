@@ -87,7 +87,7 @@ def test_profiles_restore_lighting_and_all_caller_settings(profile_app, settings
         assert client.get("/api/caller").json()["volume"] == 0.1
 
 
-def test_blank_profile_is_silent_and_keeps_hardware(profile_app):
+def test_blank_profile_uses_lighting_defaults_and_keeps_hardware(profile_app):
     with TestClient(profile_app) as client:
         client.put("/api/wled", json=lighting_config())
         client.patch("/api/caller", json={"enabled": True, "voice": next(iter(VOICES))})
@@ -97,9 +97,20 @@ def test_blank_profile_is_silent_and_keeps_hardware(profile_app):
         device = client.get("/api/wled").json()["devices"][0]
         assert device["url"] == "http://wled.test" and device["enabled"] is False
         target = device["targets"][0]
-        assert all(phase["brightness"] == 0 for phase in target["phases"].values())
-        assert target["effects"] == target["players"] == {}
-        assert target["matrix"]["appearance"]["brightness"] == 0
+        assert target["phases"]["idle"] == {
+            "color": "#6f00dd",
+            "brightness": 64,
+            "effect": 2,
+        }
+        assert target["phases"]["takeout"] == {
+            "color": "#e17100",
+            "brightness": 191,
+            "effect": 0,
+        }
+        assert target["effects"]["match_win"]["effect"] == 9
+        assert target["effects"]["match_win"]["duration"] == 10
+        assert target["players"] == {}
+        assert target["matrix"]["appearance"]["brightness"] == 128
 
 
 def test_existing_profiles_migrate_without_modifying_legacy_backups(profile_app, settings):
