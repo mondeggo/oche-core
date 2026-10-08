@@ -777,7 +777,7 @@ import {
       : "";
     for (const on of [true, false]) {
       const button = $(`wled-output-${on ? "on" : "off"}`);
-      button.textContent = selectedOutput ? `${outputLabel(selectedOutput)} ${on ? "on" : "off"}` : "";
+      button.textContent = on ? "On" : "Off";
       button.disabled = working || changed || !saved || !separate;
       button.setAttribute("aria-pressed", String(separate && (on ? !off : off)));
     }
