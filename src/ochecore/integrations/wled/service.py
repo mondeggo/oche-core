@@ -77,7 +77,9 @@ class PlayerAppearance(Appearance):
 class PhaseColours(Model):
     idle: Appearance = Field(default_factory=lambda: Appearance(color="#202020"))
     ready: Appearance = Field(default_factory=lambda: Appearance(color="#00ff00"))
-    takeout: Appearance = Field(default_factory=lambda: Appearance(color="#ffff00"))
+    takeout: Appearance = Field(
+        default_factory=lambda: Appearance(color="#ff8000", brightness=191)
+    )
     waiting: Appearance = Field(default_factory=lambda: Appearance(color="#ff0000"))
 
 

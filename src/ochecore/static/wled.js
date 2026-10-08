@@ -108,7 +108,7 @@ import {
     count: 1,
     phases: {
       ready: appearance("#00ff00"),
-      takeout: appearance("#ffff00"),
+      takeout: { ...appearance("#ff8000"), brightness: 191 },
       waiting: appearance("#ff0000"),
       idle: appearance("#202020"),
     },

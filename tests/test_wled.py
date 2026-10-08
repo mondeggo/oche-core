@@ -986,7 +986,8 @@ def test_player_colors_follow_ready_local_player_and_restore_after_takeout():
     )
     view = {"phase": "ready", "player": {"index": 0, "name": "Bob", "is_local": True}}
     assert payload(board, view, {})["seg"][0]["col"] == [[18, 52, 86]]
-    assert payload(board, {**view, "phase": "takeout"}, {})["seg"][0]["col"] == [[255, 255, 0]]
+    assert payload(board, {**view, "phase": "takeout"}, {})["seg"][0]["col"] == [[255, 128, 0]]
+    assert payload(board, {**view, "phase": "takeout"}, {})["seg"][0]["bri"] == 191
     view["player"].update(index=3, name="ALICE Smith")
     assert payload(board, view, {})["seg"][0]["col"] == [[171, 205, 239]]
     view["player"]["is_local"] = False
@@ -1063,7 +1064,7 @@ def test_segment_and_pixel_targets_are_scoped_and_composed():
     )
     body = payload(board, {"phase": "takeout", "remaining": 180}, {})
     assert set(body) == {"seg", "tt"}  # No master power/brightness or segment geometry changes.
-    assert body["seg"][0]["i"] == [0, 1, "808000", 2, 4, "808000"]
+    assert body["seg"][0]["i"] == [0, 1, "BF6000", 2, 4, "BF6000"]
     assert len(body["seg"]) == 2 and len(body["seg"][1]["i"]) == 129
     changed = payload(board, {"phase": "takeout", "remaining": 40}, {})
     assert changed["seg"][0] == body["seg"][0]
@@ -1393,7 +1394,7 @@ async def test_priority_expiry_and_corrections(monkeypatch):
         assert worker.desired(view)["seg"][0]["col"] == [[160, 0, 255]]
         future = time.monotonic() + 5
         monkeypatch.setattr("ochecore.integrations.wled.service.time.monotonic", lambda: future)
-        assert worker.desired({**view, "phase": "takeout"})["seg"][0]["col"] == [[255, 255, 0]]
+        assert worker.desired({**view, "phase": "takeout"})["seg"][0]["col"] == [[255, 128, 0]]
         worker.accept(event("bust", player={"is_local": False}))
         assert not worker.overlays
         worker.accept(event("bust"))
@@ -1439,7 +1440,7 @@ async def test_worker_isolation_preview_restoration_and_shutdown(tmp_path):
             assert any(body["seg"][0].get("col") == [[0, 255, 0]] for body in sent)
             assert sent[-1]["seg"][0]["col"] == [[255, 0, 0]]
             view["phase"] = "takeout"
-            await until(lambda: sent[-1]["seg"][0]["col"] == [[255, 255, 0]])
+            await until(lambda: sent[-1]["seg"][0]["col"] == [[255, 128, 0]])
             bus.publish("core", "match_win", {"player": {"is_local": True}}, kind="normalized")
             await until(lambda: sent[-1]["seg"][0]["col"] == [[160, 0, 255]])
         finally:
@@ -1492,7 +1493,7 @@ def test_headless_api_config_probe_cli_and_restart(settings, capsys, tmp_path):
     with TestClient(create_app(settings)) as client:
         restored = client.get("/api/wled").json()
         assert restored["devices"][0]["enabled"] is False
-        assert restored["devices"][0]["targets"][0]["phases"]["takeout"]["color"] == "#ffff00"
+        assert restored["devices"][0]["targets"][0]["phases"]["takeout"]["color"] == "#ff8000"
 
 
 def test_integration_switch_preserves_devices_and_device_edits_preserve_switch(settings, capsys):
